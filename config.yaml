@@ -1,0 +1,20 @@
+rtlsdr:
+  frequency: 433.92e6      # Target frequency in Hz
+  sample_rate: 2048000     # Sample rate in Hz
+  gain: 20.7               # RF gain in dB
+  device_index: 0          # RTL-SDR device index
+
+gps:
+  port: "/dev/ttyUSB0"     # GPS serial port
+  baud_rate: 9600          # Serial communication speed
+  timeout: 30s             # GPS fix timeout
+
+collection:
+  duration: 60s            # Collection duration
+  output_dir: "./data"     # Output directory
+  file_prefix: "argus"     # File naming prefix
+  synced_start: true       # Enable synchronized start based on epoch time
+
+logging:
+  level: "info"            # Log level (debug, info, warn, error)
+  file: "argus.log"        # Log file path
