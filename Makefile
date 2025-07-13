@@ -3,12 +3,16 @@
 # Build variables
 BINARY_NAME=argus-collector
 READER_NAME=argus-reader
+DTOA_NAME=argus-dtoa
 BINARY_UNIX=$(BINARY_NAME)_unix
 BINARY_WINDOWS=$(BINARY_NAME)_windows.exe
 BINARY_DARWIN=$(BINARY_NAME)_darwin
 READER_UNIX=$(READER_NAME)_unix
 READER_WINDOWS=$(READER_NAME)_windows.exe
 READER_DARWIN=$(READER_NAME)_darwin
+DTOA_UNIX=$(DTOA_NAME)_unix
+DTOA_WINDOWS=$(DTOA_NAME)_windows.exe
+DTOA_DARWIN=$(DTOA_NAME)_darwin
 
 # Go parameters
 GOCMD=go
@@ -36,9 +40,14 @@ build:
 build-reader:
 	$(GOBUILD) $(LDFLAGS) -o $(READER_NAME) ./cmd/argus-reader
 
-# Build both collector and reader
+# Build the DTOA analysis utility
+.PHONY: build-dtoa
+build-dtoa:
+	$(GOBUILD) $(LDFLAGS) -o $(DTOA_NAME) ./cmd/argus-dtoa
+
+# Build all tools (collector, reader, and dtoa)
 .PHONY: build-all-tools
-build-all-tools: build build-reader
+build-all-tools: build build-reader build-dtoa
 
 # Build without RTL-SDR support (for testing)
 .PHONY: build-stub
@@ -87,12 +96,16 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
 	rm -f $(READER_NAME)
+	rm -f $(DTOA_NAME)
 	rm -f $(BINARY_UNIX)
 	rm -f $(BINARY_WINDOWS)
 	rm -f $(BINARY_DARWIN)
 	rm -f $(READER_UNIX)
 	rm -f $(READER_WINDOWS)
 	rm -f $(READER_DARWIN)
+	rm -f $(DTOA_UNIX)
+	rm -f $(DTOA_WINDOWS)
+	rm -f $(DTOA_DARWIN)
 	rm -f coverage.out
 	rm -f coverage.html
 
@@ -150,6 +163,9 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  build         - Build binary with RTL-SDR support"
+	@echo "  build-reader  - Build argus-reader utility"
+	@echo "  build-dtoa    - Build argus-dtoa analysis tool"
+	@echo "  build-all-tools - Build all tools (collector, reader, dtoa)"
 	@echo "  build-stub    - Build binary without RTL-SDR (testing)"
 	@echo "  build-all     - Build for all platforms"
 	@echo "  build-linux   - Build for Linux"
