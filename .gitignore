@@ -1,0 +1,53 @@
+# Argus Collector .gitignore
+
+# Data files - exclude collected signal data
+data/
+*.dat
+*.argus
+
+# Build artifacts
+argus-collector
+argus-reader
+*_unix
+*_windows.exe
+*_darwin
+
+# Go build cache
+.cache/
+
+# Test coverage files
+coverage.out
+coverage.html
+
+# Log files
+*.log
+argus.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Configuration overrides (keep default config.yaml)
+config-*.yaml
+local-config.yaml
+
+# Runtime files
+*.pid
+*.lock
