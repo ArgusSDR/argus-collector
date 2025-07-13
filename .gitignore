@@ -1,7 +1,6 @@
 # Argus Collector .gitignore
 
 # Data files - exclude collected signal data
-data/
 *.dat
 *.argus
 
