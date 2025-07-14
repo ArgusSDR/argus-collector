@@ -26,6 +26,10 @@ var (
 	gpsPort     string  // GPS device serial port
 	verbose     bool    // Enable verbose logging
 	syncedStart bool    // Enable synchronized start timing
+	disableGPS  bool    // Disable GPS hardware and use manual coordinates
+	latitude    float64 // Manual latitude in decimal degrees
+	longitude   float64 // Manual longitude in decimal degrees
+	altitude    float64 // Manual altitude in meters
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -48,15 +52,21 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Persistent flags available to all commands
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./config.yaml", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	
 	// Command-specific flags
 	rootCmd.Flags().Float64VarP(&frequency, "frequency", "f", 433.92e6, "frequency to monitor (Hz)")
 	rootCmd.Flags().StringVarP(&duration, "duration", "d", "60s", "collection duration")
 	rootCmd.Flags().StringVarP(&output, "output", "o", "./data", "output directory")
-	rootCmd.Flags().StringVar(&gpsPort, "gps-port", "/dev/ttyUSB0", "GPS serial port")
+	rootCmd.Flags().StringVarP(&gpsPort, "gps-port", "p", "/dev/ttyUSB0", "GPS serial port")
 	rootCmd.Flags().BoolVar(&syncedStart, "synced-start", true, "enable delayed/synchronized start time (true|false)")
+	
+	// GPS override options
+	rootCmd.Flags().BoolVar(&disableGPS, "disable-gps", false, "disable GPS hardware and use manual coordinates")
+	rootCmd.Flags().Float64Var(&latitude, "latitude", 0.0, "manual latitude in decimal degrees (requires --disable-gps)")
+	rootCmd.Flags().Float64Var(&longitude, "longitude", 0.0, "manual longitude in decimal degrees (requires --disable-gps)")
+	rootCmd.Flags().Float64Var(&altitude, "altitude", 0.0, "manual altitude in meters (requires --disable-gps)")
 	
 	// Bind command line flags to viper configuration keys
 	viper.BindPFlag("rtlsdr.frequency", rootCmd.Flags().Lookup("frequency"))
@@ -64,6 +74,10 @@ func init() {
 	viper.BindPFlag("collection.output_dir", rootCmd.Flags().Lookup("output"))
 	viper.BindPFlag("gps.port", rootCmd.Flags().Lookup("gps-port"))
 	viper.BindPFlag("collection.synced_start", rootCmd.Flags().Lookup("synced-start"))
+	viper.BindPFlag("gps.disable", rootCmd.Flags().Lookup("disable-gps"))
+	viper.BindPFlag("gps.manual_latitude", rootCmd.Flags().Lookup("latitude"))
+	viper.BindPFlag("gps.manual_longitude", rootCmd.Flags().Lookup("longitude"))
+	viper.BindPFlag("gps.manual_altitude", rootCmd.Flags().Lookup("altitude"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
@@ -98,6 +112,19 @@ func runCollector() error {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Override GPS settings with command line values if provided
+	if disableGPS {
+		cfg.GPS.Disable = true
+		cfg.GPS.ManualLatitude = latitude
+		cfg.GPS.ManualLongitude = longitude
+		cfg.GPS.ManualAltitude = altitude
+	} else if cfg.GPS.Disable {
+		// GPS is disabled via config file, use viper values directly since Unmarshal didn't work properly
+		cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
+		cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
+		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
+	}
+
 	// Parse duration string into time.Duration
 	durationParsed, err := time.ParseDuration(viper.GetString("collection.duration"))
 	if err != nil {
@@ -105,12 +132,34 @@ func runCollector() error {
 	}
 	cfg.Collection.Duration = durationParsed
 
+	// Validate GPS configuration
+	if cfg.GPS.Disable {
+		// When GPS is disabled, validate manual coordinates
+		if cfg.GPS.ManualLatitude < -90 || cfg.GPS.ManualLatitude > 90 {
+			return fmt.Errorf("invalid latitude: %.8f (must be between -90 and 90 degrees)", cfg.GPS.ManualLatitude)
+		}
+		if cfg.GPS.ManualLongitude < -180 || cfg.GPS.ManualLongitude > 180 {
+			return fmt.Errorf("invalid longitude: %.8f (must be between -180 and 180 degrees)", cfg.GPS.ManualLongitude)
+		}
+		// Check if coordinates are set to default values (0,0) which likely means they weren't configured
+		if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
+			return fmt.Errorf("manual coordinates not specified: set manual_latitude and manual_longitude in config file or use --latitude and --longitude flags")
+		}
+	}
+
 	// Display startup information
 	fmt.Printf("Argus Collector starting...\n")
 	fmt.Printf("Frequency: %.2f MHz\n", cfg.RTLSDR.Frequency/1e6)
 	fmt.Printf("Duration: %v\n", cfg.Collection.Duration)
 	fmt.Printf("Output: %s\n", cfg.Collection.OutputDir)
-	fmt.Printf("GPS Port: %s\n", cfg.GPS.Port)
+	
+	if cfg.GPS.Disable {
+		fmt.Printf("GPS: DISABLED (using manual coordinates)\n")
+		fmt.Printf("Location: %.8f°, %.8f° (%.1f m)\n", 
+			cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+	} else {
+		fmt.Printf("GPS Port: %s\n", cfg.GPS.Port)
+	}
 
 	// Create and initialize collector
 	c := collector.NewCollector(cfg)

@@ -5,9 +5,15 @@ rtlsdr:
   device_index: 0          # RTL-SDR device index
 
 gps:
-  port: "/dev/ttyUSB0"     # GPS serial port
+  port: "/dev/ttyACM0"     # GPS serial port
   baud_rate: 9600          # Serial communication speed
   timeout: 30s             # GPS fix timeout
+  disable: true            # Disable GPS hardware and use manual coordinates
+  manual_latitude: 35.53313317 # Manual latitude in decimal degrees (when GPS disabled)
+  manual_longitude: -97.62130200 # Manual longitude in decimal degrees (when GPS disabled)  
+  manual_altitude: 365.0     # Manual altitude in meters (when GPS disabled)
+
+
 
 collection:
   duration: 60s            # Collection duration

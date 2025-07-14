@@ -23,9 +23,13 @@ type RTLSDRConfig struct {
 
 // GPSConfig contains GPS receiver configuration parameters
 type GPSConfig struct {
-	Port     string        `yaml:"port"`      // Serial port device path
-	BaudRate int           `yaml:"baud_rate"` // Serial communication baud rate
-	Timeout  time.Duration `yaml:"timeout"`   // Timeout for GPS fix acquisition
+	Port            string        `yaml:"port"`             // Serial port device path
+	BaudRate        int           `yaml:"baud_rate"`        // Serial communication baud rate
+	Timeout         time.Duration `yaml:"timeout"`          // Timeout for GPS fix acquisition
+	Disable         bool          `yaml:"disable"`          // Disable GPS hardware and use manual coordinates
+	ManualLatitude  float64       `yaml:"manual_latitude"`  // Manual latitude in decimal degrees
+	ManualLongitude float64       `yaml:"manual_longitude"` // Manual longitude in decimal degrees
+	ManualAltitude  float64       `yaml:"manual_altitude"`  // Manual altitude in meters
 }
 
 // CollectionConfig contains data collection configuration parameters
@@ -52,9 +56,13 @@ func DefaultConfig() *Config {
 			DeviceIndex: 0,        // First RTL-SDR device
 		},
 		GPS: GPSConfig{
-			Port:     "/dev/ttyUSB0",      // Common USB GPS device path
-			BaudRate: 9600,               // Standard NMEA baud rate
-			Timeout:  30 * time.Second,   // 30 second GPS fix timeout
+			Port:            "/dev/ttyUSB0",    // Common USB GPS device path
+			BaudRate:        9600,             // Standard NMEA baud rate
+			Timeout:         30 * time.Second, // 30 second GPS fix timeout
+			Disable:         false,            // GPS enabled by default
+			ManualLatitude:  0.0,              // Default latitude (equator)
+			ManualLongitude: 0.0,              // Default longitude (prime meridian)
+			ManualAltitude:  0.0,              // Default altitude (sea level)
 		},
 		Collection: CollectionConfig{
 			Duration:    60 * time.Second, // 60 second collection duration
