@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,6 +69,10 @@ func (c *Collector) Initialize() error {
 		if err != nil {
 			return fmt.Errorf("failed to initialize NMEA GPS: %w", err)
 		}
+		// Enable debug mode if verbose or debug logging is enabled
+		if c.config.Logging.Level == "debug" {
+			c.gps.SetDebug(true)
+		}
 		if err := c.gps.Start(); err != nil {
 			return fmt.Errorf("failed to start NMEA GPS: %w", err)
 		}
@@ -96,6 +101,10 @@ func (c *Collector) Initialize() error {
 }
 
 func (c *Collector) WaitForGPSFix() error {
+	return c.WaitForGPSFixWithContext(context.Background())
+}
+
+func (c *Collector) WaitForGPSFixWithContext(ctx context.Context) error {
 	gpsMode := c.config.GPS.Mode
 	if c.config.GPS.Disable {
 		gpsMode = "manual"
@@ -110,9 +119,28 @@ func (c *Collector) WaitForGPSFix() error {
 
 	fmt.Printf("Waiting for GPS fix via %s (timeout: %v)...\n", gpsMode, c.config.GPS.Timeout)
 	
-	position, err := c.gps.WaitForFix(c.config.GPS.Timeout)
-	if err != nil {
-		return fmt.Errorf("GPS fix failed: %w", err)
+	// Create a channel for GPS fix result
+	type gpsResult struct {
+		pos *gps.Position
+		err error
+	}
+	
+	gpsResultChan := make(chan gpsResult, 1)
+	go func() {
+		pos, err := c.gps.WaitForFix(c.config.GPS.Timeout)
+		gpsResultChan <- gpsResult{pos, err}
+	}()
+	
+	// Wait for GPS fix or context cancellation
+	var position *gps.Position
+	select {
+	case result := <-gpsResultChan:
+		if result.err != nil {
+			return fmt.Errorf("GPS fix failed: %w", result.err)
+		}
+		position = result.pos
+	case <-ctx.Done():
+		return fmt.Errorf("GPS fix cancelled: %w", ctx.Err())
 	}
 
 	fmt.Printf("GPS fix acquired: %.6f, %.6f (quality: %s, satellites: %d)\n",
@@ -123,6 +151,10 @@ func (c *Collector) WaitForGPSFix() error {
 }
 
 func (c *Collector) Collect() error {
+	return c.CollectWithContext(context.Background())
+}
+
+func (c *Collector) CollectWithContext(ctx context.Context) error {
 	var startTime time.Time
 	
 	if c.config.Collection.SyncedStart {
@@ -132,9 +164,17 @@ func (c *Collector) Collect() error {
 		waitDuration := time.Until(startTime)
 		if waitDuration > 0 {
 			fmt.Printf("Waiting %.3f seconds for synchronized start...\n", waitDuration.Seconds())
-			time.Sleep(waitDuration)
+			
+			// Wait for sync start time or context cancellation
+			select {
+			case <-time.After(waitDuration):
+				// Normal sync wait completed
+			case <-ctx.Done():
+				return fmt.Errorf("synchronized start cancelled: %w", ctx.Err())
+			}
 		}
 	} else {
+		fmt.Printf("Synchronized start disabled - starting immediately\n")
 		startTime = time.Now()
 	}
 	
@@ -142,6 +182,8 @@ func (c *Collector) Collect() error {
 	
 	fmt.Printf("Starting collection (ID: %s)\n", collectionID)
 	fmt.Printf("Duration: %v\n", c.config.Collection.Duration)
+	fmt.Printf("Collection timeouts: RTL-SDR data expected within %v, maximum wait time %v\n", 
+		c.config.Collection.Duration+10*time.Second, c.config.Collection.Duration+20*time.Second)
 	
 	deviceInfo, err := c.rtlsdr.GetDeviceInfo()
 	if err != nil {
@@ -157,55 +199,100 @@ func (c *Collector) Collect() error {
 		if err := c.rtlsdr.StartCollection(c.config.Collection.Duration, samplesChan); err != nil {
 			fmt.Printf("RTL-SDR collection error: %v\n", err)
 		}
+		// Always close the samples channel when collection ends
+		close(samplesChan)
+	}()
+
+	// Create a done channel to coordinate goroutine completion
+	done := make(chan error, 1)
+	
+	// Handle the collection result in a separate goroutine
+	go func() {
+		select {
+		case samples, ok := <-samplesChan:
+			if !ok {
+				done <- fmt.Errorf("RTL-SDR collection channel closed without data")
+				return
+			}
+			var gpsPosition gps.Position
+			
+			gpsMode := c.config.GPS.Mode
+			if c.config.GPS.Disable {
+				gpsMode = "manual"
+			}
+			
+			if gpsMode == "manual" {
+				// Use manual coordinates when GPS is disabled
+				gpsPosition = gps.Position{
+					Latitude:   c.config.GPS.ManualLatitude,
+					Longitude:  c.config.GPS.ManualLongitude,
+					Altitude:   c.config.GPS.ManualAltitude,
+					Timestamp:  time.Now(),
+					FixQuality: 1, // Indicate valid fix for manual coordinates
+					Satellites: 0, // No satellites for manual coordinates
+				}
+			} else {
+				// Get position from GPS hardware (nmea or gpsd)
+				gpsPos, err := c.gps.GetCurrentPosition()
+				if err != nil {
+					done <- fmt.Errorf("failed to get GPS position: %w", err)
+					return
+				}
+				gpsPosition = *gpsPos
+			}
+
+			collectionData := CollectionData{
+				IQSamples:    samples,
+				GPSPosition:  gpsPosition,
+				CollectionID: collectionID,
+			}
+
+			filename := filepath.Join(c.config.Collection.OutputDir, collectionID+".dat")
+			if err := c.saveData(filename, collectionData); err != nil {
+				done <- fmt.Errorf("failed to save data: %w", err)
+				return
+			}
+
+			fmt.Printf("Collection saved to: %s\n", filename)
+			fmt.Printf("Samples collected: %d\n", len(samples.Data))
+			done <- nil
+
+		case <-time.After(c.config.Collection.Duration + 10*time.Second):
+			done <- fmt.Errorf("collection timeout - no data received from RTL-SDR")
+		}
+	}()
+
+	// Wait for either successful completion, timeout, or context cancellation
+	select {
+	case err := <-done:
+		if err != nil {
+			return err
+		}
+	case <-time.After(c.config.Collection.Duration + 20*time.Second):
+		return fmt.Errorf("collection timeout - exceeded maximum wait time")
+	case <-ctx.Done():
+		return fmt.Errorf("collection cancelled: %w", ctx.Err())
+	}
+
+	// Wait for RTL-SDR goroutine to finish, but with a timeout
+	waitDone := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(waitDone)
 	}()
 
 	select {
-	case samples := <-samplesChan:
-		var gpsPosition gps.Position
-		
-		gpsMode := c.config.GPS.Mode
-		if c.config.GPS.Disable {
-			gpsMode = "manual"
-		}
-		
-		if gpsMode == "manual" {
-			// Use manual coordinates when GPS is disabled
-			gpsPosition = gps.Position{
-				Latitude:   c.config.GPS.ManualLatitude,
-				Longitude:  c.config.GPS.ManualLongitude,
-				Altitude:   c.config.GPS.ManualAltitude,
-				Timestamp:  time.Now(),
-				FixQuality: 1, // Indicate valid fix for manual coordinates
-				Satellites: 0, // No satellites for manual coordinates
-			}
-		} else {
-			// Get position from GPS hardware (nmea or gpsd)
-			gpsPos, err := c.gps.GetCurrentPosition()
-			if err != nil {
-				return fmt.Errorf("failed to get GPS position: %w", err)
-			}
-			gpsPosition = *gpsPos
-		}
-
-		collectionData := CollectionData{
-			IQSamples:    samples,
-			GPSPosition:  gpsPosition,
-			CollectionID: collectionID,
-		}
-
-		filename := filepath.Join(c.config.Collection.OutputDir, collectionID+".dat")
-		if err := c.saveData(filename, collectionData); err != nil {
-			return fmt.Errorf("failed to save data: %w", err)
-		}
-
-		fmt.Printf("Collection saved to: %s\n", filename)
-		fmt.Printf("Samples collected: %d\n", len(samples.Data))
-
-	case <-time.After(c.config.Collection.Duration + 5*time.Second):
-		return fmt.Errorf("collection timeout")
+	case <-waitDone:
+		// RTL-SDR goroutine completed normally
+	case <-time.After(5 * time.Second):
+		// RTL-SDR goroutine is taking too long, proceed anyway
+		fmt.Printf("Warning: RTL-SDR collection goroutine did not complete in time\n")
+	case <-ctx.Done():
+		// Context cancelled during cleanup
+		fmt.Printf("Warning: Cleanup cancelled, forcing exit\n")
+		return fmt.Errorf("cleanup cancelled: %w", ctx.Err())
 	}
 
-	c.wg.Wait()
 	return nil
 }
 
@@ -251,6 +338,13 @@ func (c *Collector) calculateSyncedStartTime() time.Time {
 func (c *Collector) Stop() {
 	close(c.stopChan)
 	c.wg.Wait()
+}
+
+// SetGPSDebug enables or disables GPS debug logging
+func (c *Collector) SetGPSDebug(debug bool) {
+	if c.gps != nil {
+		c.gps.SetDebug(debug)
+	}
 }
 
 func (c *Collector) Close() error {

@@ -3,6 +3,8 @@ package gps
 import (
 	"bufio"
 	"fmt"
+	"log"
+	"sync"
 	"time"
 
 	"github.com/adrianmo/go-nmea"
@@ -39,6 +41,8 @@ type NMEASerial struct {
 	port     serial.Port
 	position Position
 	fixChan  chan Position
+	mu       sync.RWMutex
+	debug    bool
 }
 
 // GPSDClient implements GPS via gpsd daemon
@@ -70,6 +74,11 @@ func NewGPSD(host, port string) (*GPS, error) {
 
 // NewNMEASerial creates a new NMEA serial GPS interface
 func NewNMEASerial(portName string, baudRate int) (*NMEASerial, error) {
+	return NewNMEASerialWithDebug(portName, baudRate, false)
+}
+
+// NewNMEASerialWithDebug creates a new NMEA serial GPS interface with debug option
+func NewNMEASerialWithDebug(portName string, baudRate int, debug bool) (*NMEASerial, error) {
 	mode := &serial.Mode{
 		BaudRate: baudRate,
 		Parity:   serial.NoParity,
@@ -85,6 +94,7 @@ func NewNMEASerial(portName string, baudRate int) (*NMEASerial, error) {
 	return &NMEASerial{
 		port:    port,
 		fixChan: make(chan Position, 10),
+		debug:   debug,
 	}, nil
 }
 
@@ -122,6 +132,13 @@ func (g *GPS) Close() error {
 	return g.impl.Close()
 }
 
+// SetDebug enables or disables debug logging for GPS implementations that support it
+func (g *GPS) SetDebug(debug bool) {
+	if nmea, ok := g.impl.(*NMEASerial); ok {
+		nmea.SetDebug(debug)
+	}
+}
+
 // NMEASerial implementation methods
 func (n *NMEASerial) Start() error {
 	go n.readLoop()
@@ -130,52 +147,138 @@ func (n *NMEASerial) Start() error {
 
 func (n *NMEASerial) readLoop() {
 	scanner := bufio.NewScanner(n.port)
+	log.Printf("GPS: Starting NMEA read loop")
 	
 	for scanner.Scan() {
 		line := scanner.Text()
 		
+		if n.debug {
+			log.Printf("GPS: Received NMEA: %s", line)
+		}
+		
+		// Skip empty lines
+		if len(line) == 0 {
+			continue
+		}
+		
 		sentence, err := nmea.Parse(line)
 		if err != nil {
+			if n.debug {
+				log.Printf("GPS: NMEA parse error: %v (line: %s)", err, line)
+			}
 			continue
 		}
 
 		switch s := sentence.(type) {
 		case nmea.GGA:
-			if s.FixQuality != nmea.Invalid {
-				var fixQuality int
-				switch s.FixQuality {
-				case nmea.GPS:
-					fixQuality = 1
-				case nmea.DGPS:
-					fixQuality = 2
-				case nmea.PPS:
-					fixQuality = 3
-				case nmea.RTK:
-					fixQuality = 4
-				case nmea.FRTK:
-					fixQuality = 5
-				case nmea.Manual:
-					fixQuality = 7
-				default:
-					fixQuality = 0
-				}
-				
-				pos := Position{
-					Latitude:   s.Latitude,
-					Longitude:  s.Longitude,
-					Altitude:   s.Altitude,
-					Timestamp:  time.Now(),
-					FixQuality: fixQuality,
-					Satellites: int(s.NumSatellites),
-				}
-				
-				n.position = pos
-				
-				select {
-				case n.fixChan <- pos:
-				default:
-				}
+			n.processGGA(s)
+		case nmea.RMC:
+			n.processRMC(s)
+		}
+	}
+	
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		log.Printf("GPS: Scanner error: %v", err)
+	}
+	log.Printf("GPS: NMEA read loop ended")
+}
+
+func (n *NMEASerial) processGGA(s nmea.GGA) {
+	if n.debug {
+		log.Printf("GPS: Processing GGA - Quality: %v, Lat: %f, Lon: %f, Sats: %d", 
+			s.FixQuality, s.Latitude, s.Longitude, s.NumSatellites)
+	}
+	
+	if s.FixQuality != nmea.Invalid {
+		var fixQuality int
+		switch s.FixQuality {
+		case nmea.GPS:
+			fixQuality = 1
+		case nmea.DGPS:
+			fixQuality = 2
+		case nmea.PPS:
+			fixQuality = 3
+		case nmea.RTK:
+			fixQuality = 4
+		case nmea.FRTK:
+			fixQuality = 5
+		case nmea.Manual:
+			fixQuality = 7
+		default:
+			fixQuality = 0
+		}
+		
+		// Only process coordinates when we have a valid fix quality
+		// Some GPS receivers output (0,0) when they don't have a fix yet, but
+		// if fix quality is valid, we should trust the coordinates
+		if fixQuality > 0 {
+			pos := Position{
+				Latitude:   s.Latitude,
+				Longitude:  s.Longitude,
+				Altitude:   s.Altitude,
+				Timestamp:  time.Now(),
+				FixQuality: fixQuality,
+				Satellites: int(s.NumSatellites),
 			}
+			
+			n.mu.Lock()
+			n.position = pos
+			n.mu.Unlock()
+			
+			if n.debug {
+				log.Printf("GPS: Updated position - Lat: %.6f, Lon: %.6f, Alt: %.1f, Quality: %d, Sats: %d",
+					pos.Latitude, pos.Longitude, pos.Altitude, pos.FixQuality, pos.Satellites)
+			}
+			
+			select {
+			case n.fixChan <- pos:
+			default:
+			}
+		}
+	}
+}
+
+func (n *NMEASerial) processRMC(s nmea.RMC) {
+	// RMC provides additional validation and time info
+	if n.debug {
+		log.Printf("GPS: Processing RMC - Valid: %t, Lat: %f, Lon: %f", 
+			s.Validity == "A", s.Latitude, s.Longitude)
+	}
+	
+	// Use RMC to supplement/validate position if we have one
+	if s.Validity == "A" {
+		n.mu.RLock()
+		currentPos := n.position
+		n.mu.RUnlock()
+		
+		// If we have a current position, update with RMC timestamp if more recent
+		if currentPos.FixQuality > 0 {
+			// Convert NMEA time to Go time.Time
+			// RMC provides time but not full timestamp, so we use current date
+			rncTime := time.Now()
+			if s.Time.Valid {
+				// Use today's date with the GPS time
+				rncTime = time.Date(
+					rncTime.Year(), rncTime.Month(), rncTime.Day(),
+					s.Time.Hour, s.Time.Minute, s.Time.Second, 
+					int(s.Time.Millisecond)*1000000, // Convert ms to ns  
+					time.UTC,
+				)
+			}
+			
+			pos := Position{
+				Latitude:   s.Latitude,
+				Longitude:  s.Longitude,
+				Altitude:   currentPos.Altitude, // RMC doesn't have altitude
+				Timestamp:  rncTime,
+				FixQuality: currentPos.FixQuality,
+				Satellites: currentPos.Satellites,
+			}
+			
+			n.mu.Lock()
+			n.position = pos
+			n.mu.Unlock()
 		}
 	}
 }
@@ -197,6 +300,9 @@ func (n *NMEASerial) WaitForFix(timeout time.Duration) (*Position, error) {
 }
 
 func (n *NMEASerial) GetCurrentPosition() (*Position, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	
 	if n.position.FixQuality == 0 {
 		return nil, fmt.Errorf("no GPS fix available")
 	}
@@ -206,11 +312,17 @@ func (n *NMEASerial) GetCurrentPosition() (*Position, error) {
 }
 
 func (n *NMEASerial) IsFixValid() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	return n.position.FixQuality > 0
 }
 
 func (n *NMEASerial) GetFixQualityString() string {
-	switch n.position.FixQuality {
+	n.mu.RLock()
+	quality := n.position.FixQuality
+	n.mu.RUnlock()
+	
+	switch quality {
 	case 0:
 		return "Invalid"
 	case 1:
@@ -239,6 +351,16 @@ func (n *NMEASerial) Close() error {
 		return n.port.Close()
 	}
 	return nil
+}
+
+// SetDebug enables or disables debug logging for NMEA GPS
+func (n *NMEASerial) SetDebug(debug bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.debug = debug
+	if debug {
+		log.Printf("GPS: Debug mode enabled for NMEA GPS")
+	}
 }
 
 // GPSDClient implementation methods

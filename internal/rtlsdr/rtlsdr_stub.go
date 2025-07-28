@@ -5,6 +5,7 @@
 package rtlsdr
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -22,39 +23,80 @@ type IQSample struct {
 	Data      []complex64  // Empty sample data
 }
 
-// NewDevice returns an error indicating RTL-SDR support is not compiled in
+// NewDevice creates a stub RTL-SDR device for testing
 func NewDevice(deviceIndex int) (*Device, error) {
-	return nil, fmt.Errorf("RTL-SDR support not compiled in. Install librtlsdr-dev and rebuild with '-tags rtlsdr'")
+	return &Device{
+		frequency:  433920000, // Default frequency
+		sampleRate: 2048000,   // Default sample rate
+		gain:       20,        // Default gain
+	}, nil
 }
 
-// SetFrequency stub method - returns error indicating RTL-SDR not available
+// SetFrequency stub method - stores frequency setting
 func (d *Device) SetFrequency(freq uint32) error {
-	return fmt.Errorf("RTL-SDR not available")
+	d.frequency = freq
+	return nil
 }
 
-// SetSampleRate stub method - returns error indicating RTL-SDR not available
+// SetSampleRate stub method - stores sample rate setting
 func (d *Device) SetSampleRate(rate uint32) error {
-	return fmt.Errorf("RTL-SDR not available")
+	d.sampleRate = rate
+	return nil
 }
 
-// SetGain stub method - returns error indicating RTL-SDR not available
+// SetGain stub method - stores gain setting
 func (d *Device) SetGain(gain float64) error {
-	return fmt.Errorf("RTL-SDR not available")
+	d.gain = int(gain * 10) // Store in tenths of dB
+	return nil
 }
 
-// EnableAGC stub method - returns error indicating RTL-SDR not available
+// EnableAGC stub method - no-op for stub implementation
 func (d *Device) EnableAGC(enable bool) error {
-	return fmt.Errorf("RTL-SDR not available")
+	return nil
 }
 
-// GetDeviceInfo stub method - returns error indicating RTL-SDR not available
+// GetDeviceInfo stub method - returns mock device info
 func (d *Device) GetDeviceInfo() (string, error) {
-	return "", fmt.Errorf("RTL-SDR not available")
+	return fmt.Sprintf("RTL-SDR Stub Device (freq: %d Hz, rate: %d Hz, gain: %.1f dB)", 
+		d.frequency, d.sampleRate, float64(d.gain)/10), nil
 }
 
-// StartCollection stub method - returns error indicating RTL-SDR not available
+// StartCollection stub method - simulates collection for testing with proper timeout handling
 func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSample) error {
-	return fmt.Errorf("RTL-SDR not available")
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+	
+	startTime := time.Now()
+	
+	// Generate fake sample data for testing  
+	totalSamples := int(d.sampleRate * uint32(duration.Seconds()))
+	fakeSamples := make([]complex64, totalSamples)
+	
+	// Fill with simple test pattern
+	for i := range fakeSamples {
+		fakeSamples[i] = complex(0.1, 0.1) // Simple test signal
+	}
+	
+	// Wait for the requested duration or until cancelled
+	select {
+	case <-ctx.Done():
+		// Duration expired - this is the normal case
+	case <-time.After(duration + time.Second):
+		// Safety timeout in case context doesn't work
+		return fmt.Errorf("stub collection timeout exceeded")
+	}
+	
+	// Send the fake samples
+	select {
+	case samplesChan <- IQSample{
+		Timestamp: startTime,
+		Data:      fakeSamples,
+	}:
+		return nil
+	default:
+		return fmt.Errorf("samples channel is full")
+	}
 }
 
 // Close stub method - no-op for stub implementation

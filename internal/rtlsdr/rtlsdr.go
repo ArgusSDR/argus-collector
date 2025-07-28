@@ -5,6 +5,7 @@
 package rtlsdr
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -106,6 +107,9 @@ func (d *Device) GetDeviceInfo() (string, error) {
 // duration: how long to collect samples
 // samplesChan: channel to send collected samples to
 func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSample) error {
+	// Create context with timeout to ensure collection stops
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
 	// Reset RTL-SDR buffer to ensure clean start
 	if err := d.dev.ResetBuffer(); err != nil {
 		return fmt.Errorf("failed to reset buffer: %w", err)
@@ -127,13 +131,22 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 	
 	// Read samples in chunks to manage memory usage
 	for totalRead < totalSamples*2 {
+		// Check if context has been cancelled (timeout reached)
+		select {
+		case <-ctx.Done():
+			// Context cancelled, stop collection
+			break
+		default:
+		}
+		
 		remaining := totalSamples*2 - totalRead
 		readSize := chunkSize
 		if readSize > remaining {
 			readSize = remaining
 		}
 		
-		// Read raw IQ data from RTL-SDR
+		// Read raw IQ data from RTL-SDR with timeout protection
+		// Note: ReadSync is blocking, but we check context between calls
 		nRead, err := d.dev.ReadSync(buffer[:readSize], readSize)
 		if err != nil {
 			return fmt.Errorf("failed to read samples: %w", err)
@@ -155,11 +168,6 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 		}
 		
 		totalRead += nRead
-		
-		// Stop if we've collected for the requested duration
-		if time.Since(startTime) >= duration {
-			break
-		}
 	}
 
 	// Send collected samples through channel

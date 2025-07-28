@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -42,7 +43,7 @@ var rootCmd = &cobra.Command{
 	Long: `Argus Collector captures radio frequency signals using RTL-SDR hardware
 and GPS positioning data for Time Difference of Arrival (TDOA) analysis.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := runCollector(); err != nil {
+		if err := runCollector(cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -116,15 +117,65 @@ func initConfig() {
 }
 
 // runCollector is the main application logic
-func runCollector() error {
+func runCollector(cmd *cobra.Command) error {
 	// Load default configuration
 	cfg := config.DefaultConfig()
+	
+	// Debug: Check if config file was found and loaded
+	configFile := viper.ConfigFileUsed()
+	if configFile != "" {
+		fmt.Printf("Debug: Using config file: %s\n", configFile)
+	} else {
+		fmt.Printf("Debug: No config file found, using defaults\n")
+	}
+	
+	// Debug: Test if we can read the file directly
+	if _, err := os.Stat("./config.yaml"); err == nil {
+		fmt.Printf("Debug: config.yaml file exists in current directory\n")
+	} else {
+		fmt.Printf("Debug: config.yaml file NOT found in current directory: %v\n", err)
+	}
+	
+	// Debug: Check raw viper values before unmarshaling
+	fmt.Printf("Debug: Raw viper values - gps.mode: '%s', gps.manual_latitude: %f, gps.manual_longitude: %f\n",
+		viper.GetString("gps.mode"), viper.GetFloat64("gps.manual_latitude"), viper.GetFloat64("gps.manual_longitude"))
 	
 	// Override with values from config file and command line flags
 	if err := viper.Unmarshal(cfg); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	
+	// Debug: Show what viper loaded from config file
+	fmt.Printf("Debug: After viper.Unmarshal - GPS Mode: '%s', Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
+		cfg.GPS.Mode, cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+	
+	// Fix: Manually override GPS coordinates from viper since unmarshal isn't working for nested fields
+	if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
+		viperLat := viper.GetFloat64("gps.manual_latitude")
+		viperLon := viper.GetFloat64("gps.manual_longitude")
+		viperAlt := viper.GetFloat64("gps.manual_altitude")
+		
+		if viperLat != 0.0 || viperLon != 0.0 {
+			cfg.GPS.ManualLatitude = viperLat
+			cfg.GPS.ManualLongitude = viperLon
+			cfg.GPS.ManualAltitude = viperAlt
+			fmt.Printf("Debug: Fixed GPS coordinates from viper - Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
+				cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+		}
+	}
 
+	// Handle explicit command line flags that should override config file
+	// Check if synced-start flag was explicitly set
+	if cmd.Flags().Changed("synced-start") {
+		// Command line flag overrides config file
+		cfg.Collection.SyncedStart = syncedStart
+		fmt.Printf("Debug: --synced-start flag explicitly set to: %t (overriding config file)\n", syncedStart)
+	} else {
+		// Use viper value (config file or default)
+		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
+		fmt.Printf("Debug: Using config file/default synced_start: %t\n", cfg.Collection.SyncedStart)
+	}
+	
 	// Handle GPS mode configuration and backward compatibility
 	if disableGPS {
 		// Backward compatibility: --disable-gps flag overrides mode
@@ -133,20 +184,29 @@ func runCollector() error {
 		cfg.GPS.ManualLatitude = latitude
 		cfg.GPS.ManualLongitude = longitude
 		cfg.GPS.ManualAltitude = altitude
-	} else if gpsMode != "" {
-		// New GPS mode specified via --gps-mode flag
+		fmt.Printf("Debug: GPS mode set to 'manual' via --disable-gps flag\n")
+	} else if cmd.Flags().Changed("gps-mode") {
+		// GPS mode explicitly specified via --gps-mode flag
 		cfg.GPS.Mode = gpsMode
 		if gpsMode == "manual" {
 			cfg.GPS.ManualLatitude = latitude
 			cfg.GPS.ManualLongitude = longitude
 			cfg.GPS.ManualAltitude = altitude
 		}
+		fmt.Printf("Debug: GPS mode explicitly set to '%s' via --gps-mode flag\n", gpsMode)
 	} else if cfg.GPS.Disable {
 		// Backward compatibility: config file has disable: true
 		cfg.GPS.Mode = "manual"
 		cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
 		cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
 		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
+		fmt.Printf("Debug: GPS mode set to 'manual' via config file disable: true\n")
+	} else {
+		// Use config file GPS mode (or default if not specified)
+		// GPS mode, coordinates already loaded via viper.Unmarshal(cfg)
+		fmt.Printf("Debug: Using GPS mode from config file: '%s'\n", cfg.GPS.Mode)
+		fmt.Printf("Debug: Config file coordinates: lat=%.8f, lon=%.8f, alt=%.1f\n", 
+			cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
 	}
 
 	// Parse duration string into time.Duration
@@ -155,6 +215,10 @@ func runCollector() error {
 		return fmt.Errorf("invalid duration format: %w", err)
 	}
 	cfg.Collection.Duration = durationParsed
+
+	// Debug: Show final GPS configuration before validation
+	fmt.Printf("Debug: Final GPS config before validation - Mode: '%s', Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
+		cfg.GPS.Mode, cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
 
 	// Validate GPS configuration
 	switch cfg.GPS.Mode {
@@ -192,6 +256,7 @@ func runCollector() error {
 	fmt.Printf("Frequency: %.2f MHz\n", cfg.RTLSDR.Frequency/1e6)
 	fmt.Printf("Duration: %v\n", cfg.Collection.Duration)
 	fmt.Printf("Output: %s\n", cfg.Collection.OutputDir)
+	fmt.Printf("Synchronized Start: %t\n", cfg.Collection.SyncedStart)
 	
 	switch cfg.GPS.Mode {
 	case "manual":
@@ -204,32 +269,64 @@ func runCollector() error {
 		fmt.Printf("GPS: GPSD MODE (%s:%s)\n", cfg.GPS.GPSDHost, cfg.GPS.GPSDPort)
 	}
 
-	// Create and initialize collector
-	c := collector.NewCollector(cfg)
-	
-	if err := c.Initialize(); err != nil {
-		return fmt.Errorf("failed to initialize collector: %w", err)
-	}
-	defer c.Close()
-
-	// Set up signal handling for graceful shutdown
+	// Set up signal handling for graceful shutdown EARLY
+	// This ensures Ctrl-C works even during initialization
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	// Create a context that can be cancelled by signal
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	
 	// Handle interrupt signals in a separate goroutine
 	go func() {
 		<-sigChan
 		fmt.Printf("\nReceived interrupt signal, shutting down...\n")
-		c.Stop()
+		cancel() // Cancel the context to stop all operations
+		os.Exit(1) // Force exit if graceful shutdown takes too long
 	}()
 
+	// Create and initialize collector
+	c := collector.NewCollector(cfg)
+	
+	// Check for cancellation before initialization
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("cancelled during setup")
+	default:
+	}
+	
+	if err := c.Initialize(); err != nil {
+		return fmt.Errorf("failed to initialize collector: %w", err)
+	}
+	defer c.Close()
+	
+	// Enable GPS debug mode if verbose logging is enabled
+	if viper.GetBool("verbose") {
+		c.SetGPSDebug(true)
+	}
+
+	// Check for cancellation before GPS fix
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("cancelled before GPS fix")
+	default:
+	}
+
 	// Wait for GPS fix before starting collection
-	if err := c.WaitForGPSFix(); err != nil {
+	if err := c.WaitForGPSFixWithContext(ctx); err != nil {
 		return fmt.Errorf("GPS initialization failed: %w", err)
 	}
 
+	// Check for cancellation before collection
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("cancelled before collection")
+	default:
+	}
+
 	// Perform signal collection
-	if err := c.Collect(); err != nil {
+	if err := c.CollectWithContext(ctx); err != nil {
 		return fmt.Errorf("collection failed: %w", err)
 	}
 
