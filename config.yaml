@@ -5,13 +5,16 @@ rtlsdr:
   device_index: 0          # RTL-SDR device index
 
 gps:
-  port: "/dev/ttyACM0"     # GPS serial port
-  baud_rate: 9600          # Serial communication speed
+  mode: "manual"            # GPS mode: "nmea", "gpsd", or "manual"
+  port: "/dev/ttyACM0"     # GPS serial port (for NMEA mode)
+  baud_rate: 9600          # Serial communication speed (for NMEA mode)
+  gpsd_host: "localhost"   # GPSD host address (for gpsd mode)
+  gpsd_port: "2947"        # GPSD port (for gpsd mode)
   timeout: 30s             # GPS fix timeout
-  disable: true            # Disable GPS hardware and use manual coordinates
-  manual_latitude: 35.53313317 # Manual latitude in decimal degrees (when GPS disabled)
-  manual_longitude: -97.62130200 # Manual longitude in decimal degrees (when GPS disabled)  
-  manual_altitude: 365.0     # Manual altitude in meters (when GPS disabled)
+  disable: false           # Disable GPS hardware and use manual coordinates (deprecated, use mode: "manual")
+  manual_latitude: 35.53313317 # Manual latitude in decimal degrees (for manual mode)
+  manual_longitude: -97.62130200 # Manual longitude in decimal degrees (for manual mode)  
+  manual_altitude: 365.0     # Manual altitude in meters (for manual mode)
 
 
 

@@ -23,10 +23,13 @@ type RTLSDRConfig struct {
 
 // GPSConfig contains GPS receiver configuration parameters
 type GPSConfig struct {
-	Port            string        `yaml:"port"`             // Serial port device path
-	BaudRate        int           `yaml:"baud_rate"`        // Serial communication baud rate
+	Mode            string        `yaml:"mode"`             // GPS mode: "nmea", "gpsd", or "manual"
+	Port            string        `yaml:"port"`             // Serial port device path (for NMEA mode)
+	BaudRate        int           `yaml:"baud_rate"`        // Serial communication baud rate (for NMEA mode)
+	GPSDHost        string        `yaml:"gpsd_host"`        // GPSD host address (for gpsd mode)
+	GPSDPort        string        `yaml:"gpsd_port"`        // GPSD port (for gpsd mode)
 	Timeout         time.Duration `yaml:"timeout"`          // Timeout for GPS fix acquisition
-	Disable         bool          `yaml:"disable"`          // Disable GPS hardware and use manual coordinates
+	Disable         bool          `yaml:"disable"`          // Disable GPS hardware and use manual coordinates (deprecated, use mode: "manual")
 	ManualLatitude  float64       `yaml:"manual_latitude"`  // Manual latitude in decimal degrees
 	ManualLongitude float64       `yaml:"manual_longitude"` // Manual longitude in decimal degrees
 	ManualAltitude  float64       `yaml:"manual_altitude"`  // Manual altitude in meters
@@ -56,10 +59,13 @@ func DefaultConfig() *Config {
 			DeviceIndex: 0,        // First RTL-SDR device
 		},
 		GPS: GPSConfig{
+			Mode:            "nmea",           // Default to NMEA serial mode
 			Port:            "/dev/ttyUSB0",    // Common USB GPS device path
 			BaudRate:        9600,             // Standard NMEA baud rate
+			GPSDHost:        "localhost",      // Default gpsd host
+			GPSDPort:        "2947",           // Default gpsd port
 			Timeout:         30 * time.Second, // 30 second GPS fix timeout
-			Disable:         false,            // GPS enabled by default
+			Disable:         false,            // GPS enabled by default (deprecated)
 			ManualLatitude:  0.0,              // Default latitude (equator)
 			ManualLongitude: 0.0,              // Default longitude (prime meridian)
 			ManualAltitude:  0.0,              // Default altitude (sea level)

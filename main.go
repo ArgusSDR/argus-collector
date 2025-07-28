@@ -23,10 +23,13 @@ var (
 	frequency   float64 // RF frequency to monitor in Hz
 	duration    string  // Collection duration (e.g., "60s")
 	output      string  // Output directory for data files
-	gpsPort     string  // GPS device serial port
+	gpsMode     string  // GPS mode: nmea, gpsd, or manual
+	gpsPort     string  // GPS device serial port (for NMEA mode)
+	gpsdHost    string  // GPSD host address (for gpsd mode)
+	gpsdPort    string  // GPSD port (for gpsd mode)
 	verbose     bool    // Enable verbose logging
 	syncedStart bool    // Enable synchronized start timing
-	disableGPS  bool    // Disable GPS hardware and use manual coordinates
+	disableGPS  bool    // Disable GPS hardware and use manual coordinates (deprecated)
 	latitude    float64 // Manual latitude in decimal degrees
 	longitude   float64 // Manual longitude in decimal degrees
 	altitude    float64 // Manual altitude in meters
@@ -59,25 +62,35 @@ func init() {
 	rootCmd.Flags().Float64VarP(&frequency, "frequency", "f", 433.92e6, "frequency to monitor (Hz)")
 	rootCmd.Flags().StringVarP(&duration, "duration", "d", "60s", "collection duration")
 	rootCmd.Flags().StringVarP(&output, "output", "o", "./data", "output directory")
-	rootCmd.Flags().StringVarP(&gpsPort, "gps-port", "p", "/dev/ttyUSB0", "GPS serial port")
 	rootCmd.Flags().BoolVar(&syncedStart, "synced-start", true, "enable delayed/synchronized start time (true|false)")
 	
-	// GPS override options
-	rootCmd.Flags().BoolVar(&disableGPS, "disable-gps", false, "disable GPS hardware and use manual coordinates")
-	rootCmd.Flags().Float64Var(&latitude, "latitude", 0.0, "manual latitude in decimal degrees (requires --disable-gps)")
-	rootCmd.Flags().Float64Var(&longitude, "longitude", 0.0, "manual longitude in decimal degrees (requires --disable-gps)")
-	rootCmd.Flags().Float64Var(&altitude, "altitude", 0.0, "manual altitude in meters (requires --disable-gps)")
+	// GPS configuration options
+	rootCmd.Flags().StringVar(&gpsMode, "gps-mode", "nmea", "GPS mode: nmea, gpsd, or manual")
+	rootCmd.Flags().StringVarP(&gpsPort, "gps-port", "p", "/dev/ttyUSB0", "GPS serial port (for NMEA mode)")
+	rootCmd.Flags().StringVar(&gpsdHost, "gpsd-host", "localhost", "GPSD host address (for gpsd mode)")
+	rootCmd.Flags().StringVar(&gpsdPort, "gpsd-port", "2947", "GPSD port (for gpsd mode)")
+	
+	// Manual GPS coordinates (for manual mode)
+	rootCmd.Flags().Float64Var(&latitude, "latitude", 0.0, "manual latitude in decimal degrees (for manual mode)")
+	rootCmd.Flags().Float64Var(&longitude, "longitude", 0.0, "manual longitude in decimal degrees (for manual mode)")
+	rootCmd.Flags().Float64Var(&altitude, "altitude", 0.0, "manual altitude in meters (for manual mode)")
+	
+	// Deprecated GPS options (for backward compatibility)
+	rootCmd.Flags().BoolVar(&disableGPS, "disable-gps", false, "disable GPS hardware and use manual coordinates (deprecated: use --gps-mode=manual)")
 	
 	// Bind command line flags to viper configuration keys
 	viper.BindPFlag("rtlsdr.frequency", rootCmd.Flags().Lookup("frequency"))
 	viper.BindPFlag("collection.duration", rootCmd.Flags().Lookup("duration"))
 	viper.BindPFlag("collection.output_dir", rootCmd.Flags().Lookup("output"))
-	viper.BindPFlag("gps.port", rootCmd.Flags().Lookup("gps-port"))
 	viper.BindPFlag("collection.synced_start", rootCmd.Flags().Lookup("synced-start"))
-	viper.BindPFlag("gps.disable", rootCmd.Flags().Lookup("disable-gps"))
+	viper.BindPFlag("gps.mode", rootCmd.Flags().Lookup("gps-mode"))
+	viper.BindPFlag("gps.port", rootCmd.Flags().Lookup("gps-port"))
+	viper.BindPFlag("gps.gpsd_host", rootCmd.Flags().Lookup("gpsd-host"))
+	viper.BindPFlag("gps.gpsd_port", rootCmd.Flags().Lookup("gpsd-port"))
 	viper.BindPFlag("gps.manual_latitude", rootCmd.Flags().Lookup("latitude"))
 	viper.BindPFlag("gps.manual_longitude", rootCmd.Flags().Lookup("longitude"))
 	viper.BindPFlag("gps.manual_altitude", rootCmd.Flags().Lookup("altitude"))
+	viper.BindPFlag("gps.disable", rootCmd.Flags().Lookup("disable-gps"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
@@ -112,14 +125,25 @@ func runCollector() error {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Override GPS settings with command line values if provided
+	// Handle GPS mode configuration and backward compatibility
 	if disableGPS {
-		cfg.GPS.Disable = true
+		// Backward compatibility: --disable-gps flag overrides mode
+		cfg.GPS.Mode = "manual"
+		cfg.GPS.Disable = true // Keep for backward compatibility
 		cfg.GPS.ManualLatitude = latitude
 		cfg.GPS.ManualLongitude = longitude
 		cfg.GPS.ManualAltitude = altitude
+	} else if gpsMode != "" {
+		// New GPS mode specified via --gps-mode flag
+		cfg.GPS.Mode = gpsMode
+		if gpsMode == "manual" {
+			cfg.GPS.ManualLatitude = latitude
+			cfg.GPS.ManualLongitude = longitude
+			cfg.GPS.ManualAltitude = altitude
+		}
 	} else if cfg.GPS.Disable {
-		// GPS is disabled via config file, use viper values directly since Unmarshal didn't work properly
+		// Backward compatibility: config file has disable: true
+		cfg.GPS.Mode = "manual"
 		cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
 		cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
 		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
@@ -133,8 +157,9 @@ func runCollector() error {
 	cfg.Collection.Duration = durationParsed
 
 	// Validate GPS configuration
-	if cfg.GPS.Disable {
-		// When GPS is disabled, validate manual coordinates
+	switch cfg.GPS.Mode {
+	case "manual":
+		// Validate manual coordinates
 		if cfg.GPS.ManualLatitude < -90 || cfg.GPS.ManualLatitude > 90 {
 			return fmt.Errorf("invalid latitude: %.8f (must be between -90 and 90 degrees)", cfg.GPS.ManualLatitude)
 		}
@@ -145,6 +170,21 @@ func runCollector() error {
 		if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
 			return fmt.Errorf("manual coordinates not specified: set manual_latitude and manual_longitude in config file or use --latitude and --longitude flags")
 		}
+	case "nmea":
+		// Validate NMEA serial port configuration
+		if cfg.GPS.Port == "" {
+			return fmt.Errorf("GPS port not specified for NMEA mode")
+		}
+	case "gpsd":
+		// Validate gpsd configuration
+		if cfg.GPS.GPSDHost == "" {
+			return fmt.Errorf("GPSD host not specified for gpsd mode")
+		}
+		if cfg.GPS.GPSDPort == "" {
+			return fmt.Errorf("GPSD port not specified for gpsd mode")
+		}
+	default:
+		return fmt.Errorf("invalid GPS mode: %s (must be 'nmea', 'gpsd', or 'manual')", cfg.GPS.Mode)
 	}
 
 	// Display startup information
@@ -153,12 +193,15 @@ func runCollector() error {
 	fmt.Printf("Duration: %v\n", cfg.Collection.Duration)
 	fmt.Printf("Output: %s\n", cfg.Collection.OutputDir)
 	
-	if cfg.GPS.Disable {
-		fmt.Printf("GPS: DISABLED (using manual coordinates)\n")
+	switch cfg.GPS.Mode {
+	case "manual":
+		fmt.Printf("GPS: MANUAL MODE (using fixed coordinates)\n")
 		fmt.Printf("Location: %.8f°, %.8f° (%.1f m)\n", 
 			cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
-	} else {
-		fmt.Printf("GPS Port: %s\n", cfg.GPS.Port)
+	case "nmea":
+		fmt.Printf("GPS: NMEA MODE (serial port %s)\n", cfg.GPS.Port)
+	case "gpsd":
+		fmt.Printf("GPS: GPSD MODE (%s:%s)\n", cfg.GPS.GPSDHost, cfg.GPS.GPSDPort)
 	}
 
 	// Create and initialize collector

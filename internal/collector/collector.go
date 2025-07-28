@@ -55,16 +55,35 @@ func (c *Collector) Initialize() error {
 		return fmt.Errorf("failed to set RTL-SDR gain: %w", err)
 	}
 
-	// Initialize GPS only if not disabled
-	if !c.config.GPS.Disable {
+	// Initialize GPS based on mode
+	gpsMode := c.config.GPS.Mode
+	// Handle backward compatibility with deprecated Disable flag
+	if c.config.GPS.Disable {
+		gpsMode = "manual"
+	}
+	
+	switch gpsMode {
+	case "nmea":
 		c.gps, err = gps.NewGPS(c.config.GPS.Port, c.config.GPS.BaudRate)
 		if err != nil {
-			return fmt.Errorf("failed to initialize GPS: %w", err)
+			return fmt.Errorf("failed to initialize NMEA GPS: %w", err)
 		}
-
 		if err := c.gps.Start(); err != nil {
-			return fmt.Errorf("failed to start GPS: %w", err)
+			return fmt.Errorf("failed to start NMEA GPS: %w", err)
 		}
+	case "gpsd":
+		c.gps, err = gps.NewGPSD(c.config.GPS.GPSDHost, c.config.GPS.GPSDPort)
+		if err != nil {
+			return fmt.Errorf("failed to initialize GPSD: %w", err)
+		}
+		if err := c.gps.Start(); err != nil {
+			return fmt.Errorf("failed to start GPSD: %w", err)
+		}
+	case "manual":
+		// GPS disabled, will use manual coordinates
+		c.gps = nil
+	default:
+		return fmt.Errorf("invalid GPS mode: %s (must be 'nmea', 'gpsd', or 'manual')", gpsMode)
 	}
 
 	if err := os.MkdirAll(c.config.Collection.OutputDir, 0755); err != nil {
@@ -77,14 +96,19 @@ func (c *Collector) Initialize() error {
 }
 
 func (c *Collector) WaitForGPSFix() error {
+	gpsMode := c.config.GPS.Mode
 	if c.config.GPS.Disable {
+		gpsMode = "manual"
+	}
+	
+	if gpsMode == "manual" {
 		// GPS is disabled, use manual coordinates
 		fmt.Printf("GPS disabled - using manual coordinates: %.8f°, %.8f°\n", 
 			c.config.GPS.ManualLatitude, c.config.GPS.ManualLongitude)
 		return nil
 	}
 
-	fmt.Printf("Waiting for GPS fix (timeout: %v)...\n", c.config.GPS.Timeout)
+	fmt.Printf("Waiting for GPS fix via %s (timeout: %v)...\n", gpsMode, c.config.GPS.Timeout)
 	
 	position, err := c.gps.WaitForFix(c.config.GPS.Timeout)
 	if err != nil {
@@ -139,7 +163,12 @@ func (c *Collector) Collect() error {
 	case samples := <-samplesChan:
 		var gpsPosition gps.Position
 		
+		gpsMode := c.config.GPS.Mode
 		if c.config.GPS.Disable {
+			gpsMode = "manual"
+		}
+		
+		if gpsMode == "manual" {
 			// Use manual coordinates when GPS is disabled
 			gpsPosition = gps.Position{
 				Latitude:   c.config.GPS.ManualLatitude,
@@ -150,7 +179,7 @@ func (c *Collector) Collect() error {
 				Satellites: 0, // No satellites for manual coordinates
 			}
 		} else {
-			// Get position from GPS hardware
+			// Get position from GPS hardware (nmea or gpsd)
 			gpsPos, err := c.gps.GetCurrentPosition()
 			if err != nil {
 				return fmt.Errorf("failed to get GPS position: %w", err)
