@@ -19,7 +19,7 @@ gps:
 
 
 collection:
-  duration: 5s             # Collection duration
+  duration: 60s            # Collection duration
   output_dir: "./data"     # Output directory
   file_prefix: "argus"     # File naming prefix
   synced_start: false      # Enable synchronized start based on epoch time (can be overridden with --synced-start=false)

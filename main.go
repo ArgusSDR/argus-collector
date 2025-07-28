@@ -121,33 +121,40 @@ func runCollector(cmd *cobra.Command) error {
 	// Load default configuration
 	cfg := config.DefaultConfig()
 	
-	// Debug: Check if config file was found and loaded
-	configFile := viper.ConfigFileUsed()
-	if configFile != "" {
-		fmt.Printf("Debug: Using config file: %s\n", configFile)
-	} else {
-		fmt.Printf("Debug: No config file found, using defaults\n")
-	}
+	// Check if debug output is enabled
+	debugEnabled := viper.GetBool("verbose") || viper.GetString("logging.level") == "debug"
 	
-	// Debug: Test if we can read the file directly
-	if _, err := os.Stat("./config.yaml"); err == nil {
-		fmt.Printf("Debug: config.yaml file exists in current directory\n")
-	} else {
-		fmt.Printf("Debug: config.yaml file NOT found in current directory: %v\n", err)
+	if debugEnabled {
+		// Debug: Check if config file was found and loaded
+		configFile := viper.ConfigFileUsed()
+		if configFile != "" {
+			fmt.Printf("Debug: Using config file: %s\n", configFile)
+		} else {
+			fmt.Printf("Debug: No config file found, using defaults\n")
+		}
+		
+		// Debug: Test if we can read the file directly
+		if _, err := os.Stat("./config.yaml"); err == nil {
+			fmt.Printf("Debug: config.yaml file exists in current directory\n")
+		} else {
+			fmt.Printf("Debug: config.yaml file NOT found in current directory: %v\n", err)
+		}
+		
+		// Debug: Check raw viper values before unmarshaling
+		fmt.Printf("Debug: Raw viper values - gps.mode: '%s', gps.manual_latitude: %f, gps.manual_longitude: %f\n",
+			viper.GetString("gps.mode"), viper.GetFloat64("gps.manual_latitude"), viper.GetFloat64("gps.manual_longitude"))
 	}
-	
-	// Debug: Check raw viper values before unmarshaling
-	fmt.Printf("Debug: Raw viper values - gps.mode: '%s', gps.manual_latitude: %f, gps.manual_longitude: %f\n",
-		viper.GetString("gps.mode"), viper.GetFloat64("gps.manual_latitude"), viper.GetFloat64("gps.manual_longitude"))
 	
 	// Override with values from config file and command line flags
 	if err := viper.Unmarshal(cfg); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	
-	// Debug: Show what viper loaded from config file
-	fmt.Printf("Debug: After viper.Unmarshal - GPS Mode: '%s', Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
-		cfg.GPS.Mode, cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+	if debugEnabled {
+		// Debug: Show what viper loaded from config file
+		fmt.Printf("Debug: After viper.Unmarshal - GPS Mode: '%s', Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
+			cfg.GPS.Mode, cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+	}
 	
 	// Fix: Manually override GPS coordinates from viper since unmarshal isn't working for nested fields
 	if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
@@ -159,8 +166,10 @@ func runCollector(cmd *cobra.Command) error {
 			cfg.GPS.ManualLatitude = viperLat
 			cfg.GPS.ManualLongitude = viperLon
 			cfg.GPS.ManualAltitude = viperAlt
-			fmt.Printf("Debug: Fixed GPS coordinates from viper - Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
-				cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+			if debugEnabled {
+				fmt.Printf("Debug: Fixed GPS coordinates from viper - Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
+					cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+			}
 		}
 	}
 
@@ -169,11 +178,15 @@ func runCollector(cmd *cobra.Command) error {
 	if cmd.Flags().Changed("synced-start") {
 		// Command line flag overrides config file
 		cfg.Collection.SyncedStart = syncedStart
-		fmt.Printf("Debug: --synced-start flag explicitly set to: %t (overriding config file)\n", syncedStart)
+		if debugEnabled {
+			fmt.Printf("Debug: --synced-start flag explicitly set to: %t (overriding config file)\n", syncedStart)
+		}
 	} else {
 		// Use viper value (config file or default)
 		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
-		fmt.Printf("Debug: Using config file/default synced_start: %t\n", cfg.Collection.SyncedStart)
+		if debugEnabled {
+			fmt.Printf("Debug: Using config file/default synced_start: %t\n", cfg.Collection.SyncedStart)
+		}
 	}
 	
 	// Handle GPS mode configuration and backward compatibility
@@ -184,7 +197,9 @@ func runCollector(cmd *cobra.Command) error {
 		cfg.GPS.ManualLatitude = latitude
 		cfg.GPS.ManualLongitude = longitude
 		cfg.GPS.ManualAltitude = altitude
-		fmt.Printf("Debug: GPS mode set to 'manual' via --disable-gps flag\n")
+		if debugEnabled {
+			fmt.Printf("Debug: GPS mode set to 'manual' via --disable-gps flag\n")
+		}
 	} else if cmd.Flags().Changed("gps-mode") {
 		// GPS mode explicitly specified via --gps-mode flag
 		cfg.GPS.Mode = gpsMode
@@ -193,20 +208,26 @@ func runCollector(cmd *cobra.Command) error {
 			cfg.GPS.ManualLongitude = longitude
 			cfg.GPS.ManualAltitude = altitude
 		}
-		fmt.Printf("Debug: GPS mode explicitly set to '%s' via --gps-mode flag\n", gpsMode)
+		if debugEnabled {
+			fmt.Printf("Debug: GPS mode explicitly set to '%s' via --gps-mode flag\n", gpsMode)
+		}
 	} else if cfg.GPS.Disable {
 		// Backward compatibility: config file has disable: true
 		cfg.GPS.Mode = "manual"
 		cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
 		cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
 		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
-		fmt.Printf("Debug: GPS mode set to 'manual' via config file disable: true\n")
+		if debugEnabled {
+			fmt.Printf("Debug: GPS mode set to 'manual' via config file disable: true\n")
+		}
 	} else {
 		// Use config file GPS mode (or default if not specified)
 		// GPS mode, coordinates already loaded via viper.Unmarshal(cfg)
-		fmt.Printf("Debug: Using GPS mode from config file: '%s'\n", cfg.GPS.Mode)
-		fmt.Printf("Debug: Config file coordinates: lat=%.8f, lon=%.8f, alt=%.1f\n", 
-			cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+		if debugEnabled {
+			fmt.Printf("Debug: Using GPS mode from config file: '%s'\n", cfg.GPS.Mode)
+			fmt.Printf("Debug: Config file coordinates: lat=%.8f, lon=%.8f, alt=%.1f\n", 
+				cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+		}
 	}
 
 	// Parse duration string into time.Duration
@@ -216,9 +237,11 @@ func runCollector(cmd *cobra.Command) error {
 	}
 	cfg.Collection.Duration = durationParsed
 
-	// Debug: Show final GPS configuration before validation
-	fmt.Printf("Debug: Final GPS config before validation - Mode: '%s', Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
-		cfg.GPS.Mode, cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+	if debugEnabled {
+		// Debug: Show final GPS configuration before validation
+		fmt.Printf("Debug: Final GPS config before validation - Mode: '%s', Lat: %.8f, Lon: %.8f, Alt: %.1f\n",
+			cfg.GPS.Mode, cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
+	}
 
 	// Validate GPS configuration
 	switch cfg.GPS.Mode {
