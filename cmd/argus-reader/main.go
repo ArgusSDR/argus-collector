@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"argus-collector/internal/filewriter"
+	"argus-collector/internal/version"
 
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,7 @@ var (
 	graphWidth    int
 	graphHeight   int
 	graphSamples  int
+	showVersion   bool
 )
 
 // rootCmd represents the base command
@@ -40,8 +42,21 @@ Display modes:
   --hex        Show raw hexadecimal dump of sample data bytes
   --stats      Show statistical analysis of sample data
   --graph      Generate ASCII graph of signal magnitude over time`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		// Handle version flag
+		if showVersion {
+			fmt.Println(version.GetVersionInfo("Argus Reader"))
+			return
+		}
+		
+		// Require filename if not showing version
+		if len(args) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: filename required\n")
+			cmd.Usage()
+			os.Exit(1)
+		}
+		
 		if err := displayFile(args[0], cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -50,6 +65,7 @@ Display modes:
 }
 
 func init() {
+	rootCmd.Flags().BoolVar(&showVersion, "version", false, "show version information")
 	rootCmd.Flags().BoolVarP(&showSamples, "samples", "s", false, "display IQ sample data")
 	rootCmd.Flags().IntVarP(&sampleLimit, "limit", "l", 10, "limit number of samples to display")
 	rootCmd.Flags().BoolVar(&showStats, "stats", false, "show statistical analysis of samples")
@@ -80,7 +96,7 @@ func displayFile(filename string, cmd *cobra.Command) error {
 
 	// Display file information
 	fmt.Printf("╔══════════════════════════════════════════════════════════════╗\n")
-	fmt.Printf("║                    ARGUS DATA FILE READER                   ║\n")
+	fmt.Printf("║               ARGUS DATA FILE READER %s                ║\n", fmt.Sprintf("%-8s", version.GetFullVersion()))
 	fmt.Printf("╚══════════════════════════════════════════════════════════════╝\n\n")
 
 	// Display file info

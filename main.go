@@ -15,6 +15,7 @@ import (
 	"argus-collector/internal/collector"
 	"argus-collector/internal/config"
 	"argus-collector/internal/rtlsdr"
+	"argus-collector/internal/version"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -37,6 +38,7 @@ var (
 	longitude   float64 // Manual longitude in decimal degrees
 	altitude    float64 // Manual altitude in meters
 	device      string  // RTL-SDR device selection (serial number or index)
+	showVersion bool    // Show version information
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -46,6 +48,12 @@ var rootCmd = &cobra.Command{
 	Long: `Argus Collector captures radio frequency signals using RTL-SDR hardware
 and GPS positioning data for Time Difference of Arrival (TDOA) analysis.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Handle version flag
+		if showVersion {
+			fmt.Println(version.GetVersionInfo("Argus Collector"))
+			return
+		}
+		
 		if err := runCollector(cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -76,6 +84,7 @@ func init() {
 	// Persistent flags available to all commands
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./config.yaml", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "show version information")
 	
 	// Command-specific flags
 	rootCmd.Flags().Float64VarP(&frequency, "frequency", "f", 433.92e6, "frequency to monitor (Hz)")
@@ -261,7 +270,7 @@ func runCollector(cmd *cobra.Command) error {
 	}
 
 	// Display startup information
-	fmt.Printf("Argus Collector starting...\n")
+	fmt.Printf("Argus Collector %s starting...\n", version.GetFullVersion())
 	fmt.Printf("Frequency: %.2f MHz\n", cfg.RTLSDR.Frequency/1e6)
 	fmt.Printf("Duration: %v\n", cfg.Collection.Duration)
 	fmt.Printf("Output: %s\n", cfg.Collection.OutputDir)

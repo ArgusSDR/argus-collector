@@ -18,9 +18,21 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
 
+# Version information
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+BUILD_USER := $(shell whoami)
+
 # Build flags
 BUILD_FLAGS=-tags rtlsdr
-LDFLAGS=-ldflags "-s -w"
+LDFLAGS=-ldflags "-s -w \
+	-X 'argus-collector/internal/version.Version=$(VERSION)' \
+	-X 'argus-collector/internal/version.GitCommit=$(GIT_COMMIT)' \
+	-X 'argus-collector/internal/version.GitBranch=$(GIT_BRANCH)' \
+	-X 'argus-collector/internal/version.BuildDate=$(BUILD_DATE)' \
+	-X 'argus-collector/internal/version.BuildUser=$(BUILD_USER)'"
 
 # Default target
 .PHONY: all
@@ -174,9 +186,26 @@ help:
 	@echo ""
 	@echo "  help          - Show this help message"
 	@echo ""
+	@echo "  version       - Display version information"
+	@echo "  show-version  - Show version string only"
+	@echo ""
 	@echo "Prerequisites for RTL-SDR build:"
 	@echo "  sudo apt-get install librtlsdr-dev  # Ubuntu/Debian"
 	@echo "  sudo dnf install rtl-sdr-devel      # Fedora/RHEL"
+
+# Display version information
+.PHONY: version
+version:
+	@echo "Version: $(VERSION)"
+	@echo "Git Commit: $(GIT_COMMIT)"
+	@echo "Git Branch: $(GIT_BRANCH)"
+	@echo "Build Date: $(BUILD_DATE)"
+	@echo "Build User: $(BUILD_USER)"
+
+# Show version that will be embedded in binaries
+.PHONY: show-version
+show-version:
+	@echo $(VERSION)
 
 # Default help target
 .DEFAULT_GOAL := help
