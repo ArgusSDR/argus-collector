@@ -7,6 +7,7 @@ A utility for analyzing and displaying the contents of Argus Collector data file
 Argus Reader allows you to:
 - **Instantly view file metadata** (frequency, GPS location, timestamps)
 - **Analyze IQ sample data** (magnitude, phase, statistics)
+- **Visualize signal patterns** (ASCII graphs of magnitude over time)
 - **Verify collection parameters** (sample rate, duration, device info)
 - **Debug data collection issues** (GPS fix quality, timing accuracy)
 
@@ -42,6 +43,12 @@ go build -o argus-reader ./cmd/argus-reader
 | `--samples` | `-s` | `false` | Display IQ sample data |
 | `--limit` | `-l` | `10` | Number of samples to display |
 | `--stats` | | `false` | Show statistical analysis |
+| `--graph` | `-g` | `false` | Generate ASCII graph of signal magnitude |
+| `--graph-width` | | `80` | Width of ASCII graph in characters |
+| `--graph-height` | | `20` | Height of ASCII graph in lines |
+| `--graph-samples` | | `1000` | Number of samples to include in graph |
+| `--hex` | | `false` | Display raw hexadecimal dump |
+| `--hex-limit` | | `256` | Limit bytes in hex dump |
 | `--format` | `-f` | `table` | Output format (table, json, csv) |
 | `--help` | `-h` | | Show help information |
 
@@ -94,6 +101,51 @@ go build -o argus-reader ./cmd/argus-reader
 │ Collection Duration     │ 59.776 seconds                         │
 └─────────────────────────┴─────────────────────────────────────────┘
 ```
+
+### Signal Visualization (Graph)
+
+```bash
+# Generate ASCII graph of signal magnitude
+./argus-reader --graph data/argus_1234567890.dat
+
+# Short form
+./argus-reader -g data/argus_1234567890.dat
+
+# Custom graph dimensions
+./argus-reader -g --graph-width 120 --graph-height 30 data/argus_1234567890.dat
+
+# Higher resolution analysis
+./argus-reader -g --graph-samples 2000 data/argus_1234567890.dat
+```
+
+**Graph Output:**
+```
+📈 Signal Magnitude Over Time:
+Samples: 1000 | Duration: 0.488 seconds | Sample Rate: 2.048 MSps
+Magnitude Range: 0.001234 to 0.987654
+
+Magnitude
+  0.9877 |                                     *                                          |
+  0.8754 |                               *           *                                    |
+  0.7631 |                          *                     *                              |
+  0.6508 |                     *                               *                         |
+  0.5385 |               *                                           *                   |
+  0.4262 |          *                                                     *              |
+  0.3139 |     *                                                               *         |
+  0.2016 |*                                                                         *    |
+  0.0893 |                                                                             * |
+         +--------------------------------------------------------------------------------+
+         0                            0.244s                            0.488s
+
+Legend: * = data point, # = multiple points, Time →
+
+📊 Signal Analysis:
+   Average Magnitude: 0.345678
+   Peak Magnitude: 0.987654
+   Dynamic Range: 58.12 dB
+```
+
+> **📖 Detailed Graph Documentation**: See [GRAPH_FEATURE.md](GRAPH_FEATURE.md) for comprehensive usage examples, interpretation guide, and advanced features.
 
 ### Sample Data Analysis
 
@@ -176,7 +228,22 @@ Quickly verify collection parameters and GPS data:
 ./argus-reader data/*.dat | grep "GPS\|Frequency\|Duration"
 ```
 
-### 2. Collection Quality Check
+### 2. Signal Pattern Analysis
+
+Visualize signal characteristics and detect transmissions:
+
+```bash
+# Quick signal presence check
+./argus-reader -g data/collection.dat
+
+# Detailed pattern analysis
+./argus-reader -g --graph-samples 5000 --graph-width 160 data/pattern.dat
+
+# Combined analysis
+./argus-reader -g --stats data/signal.dat
+```
+
+### 3. Collection Quality Check
 
 Verify GPS fix quality and timing accuracy:
 
@@ -188,16 +255,22 @@ for file in data/*.dat; do
 done
 ```
 
-### 3. Signal Analysis
+### 4. Signal Analysis
 
 Analyze signal characteristics and noise levels:
 
 ```bash
 # Get power measurements from multiple collections
 ./argus-reader --stats data/argus_*.dat | grep "Power (dB)"
+
+# Visual signal quality assessment
+./argus-reader -g data/test_signal.dat
+
+# Combined statistical and visual analysis  
+./argus-reader -g --stats data/comprehensive.dat
 ```
 
-### 4. TDOA Preparation
+### 5. TDOA Preparation
 
 Verify synchronization across multiple stations:
 
@@ -206,6 +279,11 @@ Verify synchronization across multiple stations:
 ./argus-reader station1/argus_1234567890.dat | grep "Collection Time"
 ./argus-reader station2/argus_1234567890.dat | grep "Collection Time"
 ./argus-reader station3/argus_1234567890.dat | grep "Collection Time"
+
+# Visual comparison of signal patterns across stations
+./argus-reader -g station1/synchronized_collection.dat
+./argus-reader -g station2/synchronized_collection.dat
+./argus-reader -g station3/synchronized_collection.dat
 ```
 
 ## File Format Information
@@ -285,7 +363,10 @@ for file in data/*.dat; do
     # Quick metadata check
     ./argus-reader "$file" | grep -E "(Frequency|Duration|GPS)"
     
-    # Signal quality check
+    # Signal quality check with visual graph
+    ./argus-reader -g "$file" | grep -E "(Average Magnitude|Peak Magnitude|Dynamic Range)"
+    
+    # Power measurement
     power=$(./argus-reader --stats "$file" | grep "Power (dB)" | awk '{print $5}')
     echo "Signal Power: $power"
     
@@ -340,6 +421,10 @@ for file in data/*.dat; do
     echo "" >> report.txt
     echo "File: $(basename $file)" >> report.txt
     ./argus-reader "$file" | grep -E "(Frequency|Collection Duration|GPS)" >> report.txt
+    
+    # Add signal analysis summary
+    echo "Signal Analysis:" >> report.txt
+    ./argus-reader -g "$file" | grep -E "(Average Magnitude|Peak Magnitude|Dynamic Range)" >> report.txt
 done
 ```
 
