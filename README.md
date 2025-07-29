@@ -68,11 +68,17 @@ cat /dev/ttyACM0  # or your GPS device
 ### 5. Run Collection
 
 ```bash
-# Basic collection (60 seconds at 433.92 MHz)
-./argus-collector --gps-port /dev/ttyACM0
+# List available RTL-SDR devices
+./argus-collector devices
+
+# Basic collection with NMEA GPS (60 seconds at 433.92 MHz)
+./argus-collector --gps-mode nmea --gps-port /dev/ttyACM0
+
+# Using manual GPS coordinates (no GPS hardware required)
+./argus-collector --gps-mode manual --latitude 35.533 --longitude -97.621 --altitude 365
 
 # Custom frequency and duration
-./argus-collector --frequency 915e6 --duration 30s --gps-port /dev/ttyACM0
+./argus-collector --frequency 915e6 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
 ```
 
 ## Build Instructions
@@ -138,48 +144,95 @@ make build
 
 ```
 Usage: argus-collector [flags]
+       argus-collector [command]
+
+Available Commands:
+  devices     List available RTL-SDR devices
+  help        Help about any command
 
 Flags:
   -f, --frequency float    frequency to monitor in Hz (default 4.3392e+08)
   -d, --duration string    collection duration (default "60s")
   -o, --output string      output directory (default "./data")
-      --gps-port string    GPS serial port (default "/dev/ttyUSB0")
       --synced-start       enable delayed/synchronized start time (default true)
   -c, --config string      config file (default is ./config.yaml)
   -v, --verbose            verbose output
   -h, --help               help for argus-collector
+
+RTL-SDR Device Options:
+  -D, --device string      RTL-SDR device selection (serial number or index)
+
+GPS Options:
+      --gps-mode string    GPS mode: nmea, gpsd, or manual (default "nmea")
+  -p, --gps-port string    GPS serial port (for NMEA mode) (default "/dev/ttyUSB0")
+      --gpsd-host string   GPSD host address (for gpsd mode) (default "localhost")
+      --gpsd-port string   GPSD port (for gpsd mode) (default "2947")
+      --latitude float     manual latitude in decimal degrees (for manual mode)
+      --longitude float    manual longitude in decimal degrees (for manual mode)
+      --altitude float     manual altitude in meters (for manual mode)
+      --disable-gps        disable GPS hardware (deprecated: use --gps-mode=manual)
 ```
 
 ### Basic Usage Examples
 
 ```bash
-# Default collection (433.92 MHz, 60 seconds, synchronized start)
-./argus-collector --gps-port /dev/ttyACM0
+# List available RTL-SDR devices
+./argus-collector devices
 
-# Custom frequency and duration
-./argus-collector --frequency 915e6 --duration 30s --gps-port /dev/ttyACM0
+# Default collection (433.92 MHz, 60 seconds, synchronized start)
+./argus-collector --gps-mode nmea --gps-port /dev/ttyACM0
+
+# Select specific RTL-SDR device by index
+./argus-collector -D 0 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Select specific RTL-SDR device by serial number
+./argus-collector -D 00000001 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Using GPSD for GPS
+./argus-collector --gps-mode gpsd --gpsd-host localhost --gpsd-port 2947
+
+# Manual GPS coordinates (no hardware required)
+./argus-collector --gps-mode manual --latitude 35.533 --longitude -97.621 --altitude 365
+
+# Custom frequency and duration with device selection
+./argus-collector -D STATION01 --frequency 915e6 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
 
 # Immediate start (no synchronization delay)
-./argus-collector --frequency 433.92e6 --synced-start=false --gps-port /dev/ttyACM0
+./argus-collector --frequency 433.92e6 --synced-start=false --gps-mode manual --latitude 35.533 --longitude -97.621
 
 # Use configuration file
 ./argus-collector --config my-config.yaml
 
 # Verbose output for debugging
-./argus-collector --frequency 433.92e6 --gps-port /dev/ttyACM0 --verbose
+./argus-collector --frequency 433.92e6 --gps-mode nmea --gps-port /dev/ttyACM0 --verbose
+```
+
+### Device Management
+
+```bash
+# List all available RTL-SDR devices with detailed information
+./argus-collector devices
+
+# This shows device index, name, manufacturer, product, and serial number
+# Use this information to configure device selection in config.yaml
 ```
 
 ### Multi-Station Deployment
 
 ```bash
-# Station 1 (synchronized start enabled by default)
-./argus-collector --frequency 433.92e6 --output ./station1/ --gps-port /dev/ttyACM0
+# Station 1 with specific device selection
+./argus-collector -D NORTH001 --frequency 433.92e6 --output ./station1/ --gps-mode nmea --gps-port /dev/ttyACM0
 
-# Station 2 (different location, same frequency)
-./argus-collector --frequency 433.92e6 --output ./station2/ --gps-port /dev/ttyACM0
+# Station 2 (different location, same frequency, different device)
+./argus-collector -D SOUTH001 --frequency 433.92e6 --output ./station2/ --gps-mode nmea --gps-port /dev/ttyACM0
 
-# Station 3 (different location, same frequency)
-./argus-collector --frequency 433.92e6 --output ./station3/ --gps-port /dev/ttyACM0
+# Station 3 (different location, same frequency, different device)
+./argus-collector -D EAST0001 --frequency 433.92e6 --output ./station3/ --gps-mode nmea --gps-port /dev/ttyACM0
+
+# Using manual GPS coordinates with device selection
+./argus-collector -D 0 --frequency 433.92e6 --gps-mode manual --latitude 35.5331 --longitude -97.6213 --output station1/
+./argus-collector -D 1 --frequency 433.92e6 --gps-mode manual --latitude 35.5341 --longitude -97.6223 --output station2/
+./argus-collector -D 2 --frequency 433.92e6 --gps-mode manual --latitude 35.5351 --longitude -97.6233 --output station3/
 
 # All stations will automatically start collection at the same epoch second
 ```
@@ -188,17 +241,17 @@ Flags:
 
 ```bash
 # Common ISM bands
-./argus-collector --frequency 433.92e6   # 433.92 MHz (ISM)
-./argus-collector --frequency 868e6      # 868 MHz (EU ISM)
-./argus-collector --frequency 915e6      # 915 MHz (US ISM)
+./argus-collector --frequency 433.92e6 --gps-mode manual --latitude 35.533 --longitude -97.621   # 433.92 MHz (ISM)
+./argus-collector --frequency 868e6 --gps-mode manual --latitude 35.533 --longitude -97.621      # 868 MHz (EU ISM)
+./argus-collector --frequency 915e6 --gps-mode manual --latitude 35.533 --longitude -97.621      # 915 MHz (US ISM)
 
 # Aviation bands
-./argus-collector --frequency 121.5e6    # Emergency frequency
-./argus-collector --frequency 1090e6     # ADS-B
+./argus-collector --frequency 121.5e6 --gps-mode manual --latitude 35.533 --longitude -97.621    # Emergency frequency
+./argus-collector --frequency 1090e6 --gps-mode manual --latitude 35.533 --longitude -97.621     # ADS-B
 
 # Amateur radio
-./argus-collector --frequency 144.39e6   # 2m APRS
-./argus-collector --frequency 446e6      # 70cm
+./argus-collector --frequency 144.39e6 --gps-mode manual --latitude 35.533 --longitude -97.621   # 2m APRS
+./argus-collector --frequency 446e6 --gps-mode manual --latitude 35.533 --longitude -97.621      # 70cm
 ```
 
 ### Configuration File
@@ -210,23 +263,241 @@ rtlsdr:
   frequency: 433.92e6      # Target frequency in Hz
   sample_rate: 2048000     # Sample rate in Hz
   gain: 20.7               # RF gain in dB
-  device_index: 0          # RTL-SDR device index
+  device_index:            # RTL-SDR device index (used if serial_number is empty)
+  serial_number: ""        # RTL-SDR device serial number (preferred over device_index)
 
 gps:
-  port: "/dev/ttyACM0"     # GPS serial port
-  baud_rate: 9600          # Serial communication speed
+  mode: "manual"             # GPS mode: "nmea", "gpsd", or "manual"  
+  port: "/dev/ttyACM0"     # GPS serial port (for NMEA mode)
+  baud_rate: 38400         # Serial communication speed (for NMEA mode) - u-blox often uses 38400
+  gpsd_host: "localhost"   # GPSD host address (for gpsd mode)
+  gpsd_port: "2947"        # GPSD port (for gpsd mode)
   timeout: 30s             # GPS fix timeout
+  disable: false           # Disable GPS hardware and use manual coordinates (deprecated, use mode: "manual")
+  manual_latitude: 35.53313317 # Manual latitude in decimal degrees (for manual mode)
+  manual_longitude: -97.62130200 # Manual longitude in decimal degrees (for manual mode)
+  manual_altitude: 365.0     # Manual altitude in meters (for manual mode)
 
 collection:
   duration: 60s            # Collection duration
   output_dir: "./data"     # Output directory
   file_prefix: "argus"     # File naming prefix
-  synced_start: true       # Enable synchronized start based on epoch time
+  synced_start: false      # Enable synchronized start based on epoch time (can be overridden with --synced-start=false)
 
 logging:
-  level: "info"            # Log level
+  level: "info"            # Log level (debug, info, warn, error)
   file: "argus.log"        # Log file path
 ```
+
+## RTL-SDR Device Selection
+
+Argus Collector supports multiple RTL-SDR devices and provides two methods for device selection: by index (traditional) or by serial number (recommended for multi-device setups).
+
+### List Available Devices
+
+Use the `devices` command to discover connected RTL-SDR devices:
+
+```bash
+./argus-collector devices
+```
+
+**Example Output:**
+```
+Available RTL-SDR Devices:
+=============================
+
+Device 0:
+  Name:         Generic RTL2832U OEM
+  Manufacturer: Realtek
+  Product:      RTL2838UHIDIR
+  Serial:       00000001
+
+Device 1:
+  Name:         Generic RTL2832U OEM
+  Manufacturer: Nooelec
+  Product:      NESDR SMArt v5
+  Serial:       00000002
+
+Configuration Examples:
+======================
+# Use device by index (traditional method)
+rtlsdr:
+  device_index: 0
+
+# Use device by serial number (recommended)
+rtlsdr:
+  serial_number: "00000001"
+```
+
+### Device Selection Methods
+
+#### Method 1: By Index (Traditional)
+```yaml
+# In config.yaml
+rtlsdr:
+  device_index: 0    # Use first RTL-SDR device
+```
+```bash
+# Or via command line
+./argus-collector -D 0 --gps-mode manual --latitude 35.533 --longitude -97.621
+```
+- **Pros**: Simple, works with any RTL-SDR device
+- **Cons**: Index may change if USB devices are reconnected
+
+#### Method 2: By Serial Number (Recommended)
+```yaml
+# In config.yaml
+rtlsdr:
+  serial_number: "00000001"    # Use device with specific serial
+```
+```bash
+# Or via command line
+./argus-collector -D 00000001 --gps-mode manual --latitude 35.533 --longitude -97.621
+```
+- **Pros**: Consistent device selection regardless of USB port changes
+- **Cons**: Requires devices to have unique serial numbers
+
+#### Method 3: Command Line Override (-D flag)
+The `-D` or `--device` flag allows you to override device selection from the command line:
+
+```bash
+# Select by device index
+./argus-collector -D 1 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Select by serial number
+./argus-collector -D STATION01 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Override config file setting
+./argus-collector -D 00000002 --config station1.yaml
+```
+
+**Device Selection Priority:**
+1. `-D` / `--device` command line flag (highest priority)
+2. `serial_number` in config.yaml (if not empty)
+3. `device_index` in config.yaml (fallback)
+4. Device index 0 (default)
+
+### Setting RTL-SDR Serial Numbers
+
+Many RTL-SDR devices come with generic serial numbers (like `00000001`). For multi-device deployments, set unique serial numbers using the `rtl_eeprom` tool:
+
+#### Install rtl_eeprom
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install rtl-sdr
+
+# Fedora/RHEL  
+sudo dnf install rtl-sdr
+
+# Arch Linux
+sudo pacman -S rtl-sdr
+```
+
+#### View Current Device Information
+
+```bash
+# List all RTL-SDR devices
+rtl_test -t
+
+# View EEPROM contents for device 0
+rtl_eeprom -d 0
+```
+
+**Example output:**
+```
+Found 1 device(s):
+  0:  Realtek, RTL2838UHIDIR, SN: 00000001
+
+Current EEPROM configuration:
+Vendor ID:      0x0bda
+Product ID:     0x2838
+Manufacturer:   Realtek
+Product:        RTL2838UHIDIR
+Serial number:  00000001
+Serial number enabled.
+IR endpoint:    enabled.
+Remote wakeup:  enabled.
+```
+
+#### Set Unique Serial Numbers
+
+**⚠️ Important**: This modifies the device EEPROM permanently. Ensure you have the correct device selected.
+
+```bash
+# Set serial number for device 0
+sudo rtl_eeprom -d 0 -s STATION01
+
+# Set serial number for device 1  
+sudo rtl_eeprom -d 1 -s STATION02
+
+# Verify the change
+rtl_eeprom -d 0
+```
+
+#### Multi-Station Setup Example
+
+For a 3-station TDOA setup:
+
+```bash
+# Station 1 (North site)
+sudo rtl_eeprom -d 0 -s NORTH001
+
+# Station 2 (South site)  
+sudo rtl_eeprom -d 0 -s SOUTH001
+
+# Station 3 (East site)
+sudo rtl_eeprom -d 0 -s EAST0001
+```
+
+Then configure each station:
+
+```yaml
+# north-station/config.yaml
+rtlsdr:
+  serial_number: "NORTH001"
+
+# south-station/config.yaml  
+rtlsdr:
+  serial_number: "SOUTH001"
+
+# east-station/config.yaml
+rtlsdr:
+  serial_number: "EAST0001"
+```
+
+### Best Practices
+
+1. **Use Serial Numbers**: Always prefer serial number selection for production deployments
+2. **Unique Serials**: Ensure each RTL-SDR device has a unique, descriptive serial number
+3. **Document Assignments**: Keep a record of which serial numbers are assigned to which stations
+4. **Test Changes**: Always verify device selection after setting serial numbers
+5. **Backup EEPROMs**: Consider backing up original EEPROM contents before modification
+
+### Troubleshooting Device Selection
+
+**Device not found by serial number:**
+```bash
+# Verify serial number exists
+./argus-collector devices
+
+# Check if rtl_eeprom shows the expected serial
+rtl_eeprom -d 0
+```
+
+**Multiple devices with same serial:**
+```bash
+# This will show duplicate serials
+./argus-collector devices
+
+# Set unique serials using rtl_eeprom
+sudo rtl_eeprom -d 0 -s UNIQUE001
+sudo rtl_eeprom -d 1 -s UNIQUE002
+```
+
+**Device index changes after reboot:**
+- Switch to serial number selection method
+- Serial numbers are persistent across reboots and USB reconnections
 
 ## Output Data Format
 
@@ -305,10 +576,10 @@ This ensures all stations start collection at the same second, critical for TDOA
 
 ```bash
 # Enable synchronized start (default)
-./argus-collector --frequency 433.92e6 --synced-start
+./argus-collector --frequency 433.92e6 --synced-start --gps-mode manual --latitude 35.533 --longitude -97.621
 
 # Disable synchronized start for immediate collection
-./argus-collector --frequency 433.92e6 --synced-start=false
+./argus-collector --frequency 433.92e6 --synced-start=false --gps-mode manual --latitude 35.533 --longitude -97.621
 
 # Multiple stations will automatically synchronize
 # Station 1: Starts at HH:MM:23 (if sync_point = 23)
@@ -326,14 +597,19 @@ This ensures all stations start collection at the same second, critical for TDOA
 ### Example Multi-Station Setup
 
 ```bash
-# Station 1
-./argus-collector --frequency 433.92e6 --output station1/ --config station1.yaml
+# Station 1 with device selection
+./argus-collector -D NORTH001 --frequency 433.92e6 --output station1/ --config station1.yaml
 
-# Station 2 (different location)
-./argus-collector --frequency 433.92e6 --output station2/ --config station2.yaml
+# Station 2 (different location, different device)
+./argus-collector -D SOUTH001 --frequency 433.92e6 --output station2/ --config station2.yaml
 
-# Station 3 (different location)
-./argus-collector --frequency 433.92e6 --output station3/ --config station3.yaml
+# Station 3 (different location, different device)
+./argus-collector -D EAST0001 --frequency 433.92e6 --output station3/ --config station3.yaml
+
+# Or using manual GPS mode with device selection
+./argus-collector -D 0 --frequency 433.92e6 --gps-mode manual --latitude 35.533 --longitude -97.621 --output station1/
+./argus-collector -D 1 --frequency 433.92e6 --gps-mode manual --latitude 35.534 --longitude -97.622 --output station2/
+./argus-collector -D 2 --frequency 433.92e6 --gps-mode manual --latitude 35.535 --longitude -97.623 --output station3/
 ```
 
 ## Data Analysis Tools

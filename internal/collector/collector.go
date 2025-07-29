@@ -39,9 +39,19 @@ func NewCollector(cfg *config.Config) *Collector {
 func (c *Collector) Initialize() error {
 	var err error
 
-	c.rtlsdr, err = rtlsdr.NewDevice(c.config.RTLSDR.DeviceIndex)
-	if err != nil {
-		return fmt.Errorf("failed to initialize RTL-SDR: %w", err)
+	// Choose device selection method based on configuration
+	if c.config.RTLSDR.SerialNumber != "" {
+		// Use serial number to select device
+		c.rtlsdr, err = rtlsdr.NewDeviceBySerial(c.config.RTLSDR.SerialNumber)
+		if err != nil {
+			return fmt.Errorf("failed to initialize RTL-SDR by serial %s: %w", c.config.RTLSDR.SerialNumber, err)
+		}
+	} else {
+		// Fall back to device index
+		c.rtlsdr, err = rtlsdr.NewDevice(c.config.RTLSDR.DeviceIndex)
+		if err != nil {
+			return fmt.Errorf("failed to initialize RTL-SDR by index %d: %w", c.config.RTLSDR.DeviceIndex, err)
+		}
 	}
 
 	if err := c.rtlsdr.SetFrequency(uint32(c.config.RTLSDR.Frequency)); err != nil {

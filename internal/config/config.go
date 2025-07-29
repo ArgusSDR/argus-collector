@@ -15,10 +15,11 @@ type Config struct {
 
 // RTLSDRConfig contains RTL-SDR device configuration parameters
 type RTLSDRConfig struct {
-	Frequency   float64 `yaml:"frequency"`    // RF frequency in Hz
-	SampleRate  uint32  `yaml:"sample_rate"`  // Sample rate in Hz
-	Gain        float64 `yaml:"gain"`         // RF gain in dB
-	DeviceIndex int     `yaml:"device_index"` // RTL-SDR device index (0-based)
+	Frequency    float64 `yaml:"frequency"`     // RF frequency in Hz
+	SampleRate   uint32  `yaml:"sample_rate"`   // Sample rate in Hz
+	Gain         float64 `yaml:"gain"`          // RF gain in dB
+	DeviceIndex  int     `yaml:"device_index"`  // RTL-SDR device index (0-based, used if SerialNumber is empty)
+	SerialNumber string  `yaml:"serial_number"` // RTL-SDR device serial number (preferred over device_index)
 }
 
 // GPSConfig contains GPS receiver configuration parameters
@@ -53,10 +54,11 @@ type LoggingConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		RTLSDR: RTLSDRConfig{
-			Frequency:   433.92e6, // 433.92 MHz ISM band
-			SampleRate:  2048000,  // 2.048 MSps
-			Gain:        20.7,     // 20.7 dB gain
-			DeviceIndex: 0,        // First RTL-SDR device
+			Frequency:    433.92e6, // 433.92 MHz ISM band
+			SampleRate:   2048000,  // 2.048 MSps
+			Gain:         20.7,     // 20.7 dB gain
+			DeviceIndex:  0,        // First RTL-SDR device
+			SerialNumber: "",       // Use device_index by default
 		},
 		GPS: GPSConfig{
 			Mode:            "nmea",           // Default to NMEA serial mode

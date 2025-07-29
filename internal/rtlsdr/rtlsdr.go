@@ -49,6 +49,82 @@ func NewDevice(deviceIndex int) (*Device, error) {
 	return &Device{dev: dev}, nil
 }
 
+// NewDeviceBySerial creates a new RTL-SDR device instance by serial number
+// serialNumber: serial number string of the device to open
+func NewDeviceBySerial(serialNumber string) (*Device, error) {
+	// Check if any RTL-SDR devices are connected
+	count := rtlsdr.GetDeviceCount()
+	if count == 0 {
+		return nil, fmt.Errorf("no RTL-SDR devices found")
+	}
+	
+	// Search for device with matching serial number
+	for i := 0; i < count; i++ {
+		// Get device USB strings (manufacturer, product, serial)
+		_, _, serial, err := rtlsdr.GetDeviceUsbStrings(i)
+		if err != nil {
+			continue // Skip devices we can't query
+		}
+		
+		// Check if serial number matches
+		if serial == serialNumber {
+			// Open the matching device
+			dev, err := rtlsdr.Open(i)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open RTL-SDR device with serial %s: %w", serialNumber, err)
+			}
+			return &Device{dev: dev}, nil
+		}
+	}
+	
+	return nil, fmt.Errorf("no RTL-SDR device found with serial number: %s", serialNumber)
+}
+
+// ListDevices returns information about all available RTL-SDR devices
+func ListDevices() ([]DeviceInfo, error) {
+	count := rtlsdr.GetDeviceCount()
+	if count == 0 {
+		return nil, fmt.Errorf("no RTL-SDR devices found")
+	}
+	
+	devices := make([]DeviceInfo, 0, count)
+	for i := 0; i < count; i++ {
+		// Get device USB strings
+		manufacturer, product, serial, err := rtlsdr.GetDeviceUsbStrings(i)
+		if err != nil {
+			// If we can't get USB strings, use device name
+			name := rtlsdr.GetDeviceName(i)
+			devices = append(devices, DeviceInfo{
+				Index:        i,
+				Name:         name,
+				Manufacturer: "Unknown",
+				Product:      "Unknown", 
+				SerialNumber: "Unknown",
+			})
+			continue
+		}
+		
+		devices = append(devices, DeviceInfo{
+			Index:        i,
+			Name:         rtlsdr.GetDeviceName(i),
+			Manufacturer: manufacturer,
+			Product:      product,
+			SerialNumber: serial,
+		})
+	}
+	
+	return devices, nil
+}
+
+// DeviceInfo contains information about an RTL-SDR device
+type DeviceInfo struct {
+	Index        int    // Device index (0-based)
+	Name         string // Device name
+	Manufacturer string // USB manufacturer string
+	Product      string // USB product string  
+	SerialNumber string // USB serial number string
+}
+
 // SetFrequency sets the center frequency of the RTL-SDR device
 // freq: frequency in Hz
 func (d *Device) SetFrequency(freq uint32) error {
@@ -62,11 +138,67 @@ func (d *Device) SetFrequency(freq uint32) error {
 // SetSampleRate sets the sample rate of the RTL-SDR device
 // rate: sample rate in Hz (samples per second)
 func (d *Device) SetSampleRate(rate uint32) error {
+	// Try the requested rate first
 	if err := d.dev.SetSampleRate(int(rate)); err != nil {
-		return fmt.Errorf("failed to set sample rate to %d Hz: %w", rate, err)
+		// If the requested rate fails, try to find a valid rate
+		validRate, fallbackErr := d.findValidSampleRate(rate)
+		if fallbackErr != nil {
+			return fmt.Errorf("failed to set sample rate to %d Hz and no valid fallback found: %w", rate, err)
+		}
+		
+		// Try the valid rate
+		if err := d.dev.SetSampleRate(int(validRate)); err != nil {
+			return fmt.Errorf("failed to set sample rate to %d Hz (tried fallback %d Hz): %w", rate, validRate, err)
+		}
+		
+		fmt.Printf("Warning: Requested sample rate %d Hz not supported, using %d Hz instead\n", rate, validRate)
+		d.sampleRate = validRate
+		return nil
 	}
+	
 	d.sampleRate = rate
 	return nil
+}
+
+// findValidSampleRate finds a valid sample rate close to the requested rate
+func (d *Device) findValidSampleRate(requestedRate uint32) (uint32, error) {
+	// Common RTL-SDR supported sample rates (in Hz)
+	validRates := []uint32{
+		250000,   // 250 kHz
+		1024000,  // 1.024 MHz  
+		1536000,  // 1.536 MHz
+		1792000,  // 1.792 MHz
+		1920000,  // 1.92 MHz
+		2048000,  // 2.048 MHz
+		2160000,  // 2.16 MHz
+		2560000,  // 2.56 MHz
+		2880000,  // 2.88 MHz
+		3200000,  // 3.2 MHz (maximum for most devices)
+	}
+	
+	// Find the closest valid rate
+	var bestRate uint32
+	var minDiff uint32 = ^uint32(0) // Max uint32
+	
+	for _, rate := range validRates {
+		var diff uint32
+		if rate > requestedRate {
+			diff = rate - requestedRate
+		} else {
+			diff = requestedRate - rate
+		}
+		
+		if diff < minDiff {
+			minDiff = diff
+			bestRate = rate
+		}
+	}
+	
+	if bestRate == 0 {
+		return 0, fmt.Errorf("no valid sample rate found")
+	}
+	
+	return bestRate, nil
 }
 
 // SetGain sets the tuner gain of the RTL-SDR device
