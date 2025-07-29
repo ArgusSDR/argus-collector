@@ -42,7 +42,7 @@ Display modes:
   --graph      Generate ASCII graph of signal magnitude over time`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := displayFile(args[0]); err != nil {
+		if err := displayFile(args[0], cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -63,7 +63,7 @@ func init() {
 }
 
 // displayFile reads and displays the contents of an Argus data file
-func displayFile(filename string) error {
+func displayFile(filename string, cmd *cobra.Command) error {
 	// Check if file exists
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		return fmt.Errorf("file does not exist: %s", filename)
@@ -110,6 +110,16 @@ func displayFile(filename string) error {
 			return fmt.Errorf("failed to read samples: %w", err)
 		}
 		
+		// If --graph-samples was not explicitly set by user, default to total samples from header
+		actualGraphSamples := graphSamples
+		if !cmd.Flags().Changed("graph-samples") {
+			// User didn't specify --graph-samples, use total samples from file header (with reasonable cap)
+			actualGraphSamples = int(sampleCount)
+			if actualGraphSamples > 10000 { // Cap at reasonable limit for performance
+				actualGraphSamples = 10000
+			}
+		}
+		
 		if showSamples {
 			// Show limited samples for display
 			limitedSamples := allSamples
@@ -133,12 +143,12 @@ func displayFile(filename string) error {
 		if showGraph {
 			// Show ASCII graph of signal magnitude over time
 			graphSampleData := allSamples
-			if len(allSamples) > graphSamples {
+			if len(allSamples) > actualGraphSamples {
 				// Use evenly spaced samples across the entire collection
-				step := len(allSamples) / graphSamples
-				graphSampleData = make([]complex64, 0, graphSamples)
+				step := len(allSamples) / actualGraphSamples
+				graphSampleData = make([]complex64, 0, actualGraphSamples)
 				for i := 0; i < len(allSamples); i += step {
-					if len(graphSampleData) < graphSamples {
+					if len(graphSampleData) < actualGraphSamples {
 						graphSampleData = append(graphSampleData, allSamples[i])
 					}
 				}

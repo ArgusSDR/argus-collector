@@ -133,6 +133,22 @@ Diagnose:
 - **Overload**: Gain too high
 - **Intermittent**: Timing or interference issues
 
+### 6. **File Integrity Analysis**
+```bash
+# Check for truncated or corrupted files
+./argus-reader data/suspicious.dat | grep -E "(Header claims|Actual readable)"
+
+# Compare expected vs actual data
+for file in data/*.dat; do
+    echo "=== $file ==="
+    ./argus-reader "$file" | grep -A4 "File analysis"
+done
+```
+Identify:
+- **Truncated collections**: Header >> Actual samples
+- **Complete collections**: Header ≈ Actual samples  
+- **Storage issues**: Inconsistent file sizes
+
 ## Graph Interpretation
 
 ### **Signal Characteristics**
@@ -201,6 +217,68 @@ done
 - **Large Files**: Processes files up to several GB efficiently
 
 ## Technical Details
+
+### **Sample Count Interpretation**
+
+When analyzing data files, argus-reader displays three different sample counts that provide important information about file integrity and data availability:
+
+#### **Header Claims: X samples**
+- **Definition**: The sample count stored in the file's binary header
+- **Source**: Written by argus-collector during data collection
+- **Represents**: The intended/expected number of samples for the collection
+- **Use Case**: Original collection parameters and expected file size
+
+#### **Available for Samples: X bytes**
+- **Definition**: Actual file size minus estimated header size
+- **Calculation**: `File Size - Header Size = Available Data Space`
+- **Represents**: Maximum possible sample data that could be stored
+- **Use Case**: Determining theoretical sample capacity
+
+#### **Actual Readable Samples: X**
+- **Definition**: Number of complete IQ samples that can be successfully read
+- **Calculation**: `Available Bytes ÷ 8 bytes per complex64 sample`
+- **Represents**: Samples that actually exist and can be processed
+- **Use Case**: Real data available for analysis and graphing
+
+#### **Example Scenario**
+```
+📊 File analysis:
+   Header claims: 122880000 samples (937.50 MB)
+   File size: 10773997 bytes (10.27 MB)  
+   Estimated header size: 105 bytes
+   Available for samples: 10773892 bytes
+   Actual readable samples: 1346736
+```
+
+**Interpretation**:
+- **Complete Collection**: Would have 122,880,000 samples (60 seconds at 2.048 MSps)
+- **File Truncation**: Only ~1.35M samples available (collection was interrupted)
+- **Data Loss**: 99.89% of intended data is missing
+- **Graph Impact**: Shows only first ~0.66 seconds of intended 60-second collection
+
+#### **Common Patterns**
+
+**✅ Complete File**:
+- Header Claims = Actual Readable (±1 due to rounding)
+- Available bytes matches expected data size
+- No file truncation warnings
+
+**⚠️ Truncated File** (Collection Interrupted):
+- Header Claims >> Actual Readable
+- File size much smaller than expected
+- Shows "File appears truncated" warning
+
+**❌ Corrupted Header**:
+- Header Claims unreasonably large/small
+- Available bytes don't match header expectations
+- May show negative or zero readable samples
+
+### **Graph Sample Selection**
+
+The graph feature uses **Header Claims** by default (capped at 10,000) to represent the intended collection scope, not just the available data. This provides:
+- **Consistent scaling** across complete and partial files
+- **Representative time axis** based on original collection parameters  
+- **Proper duration calculation** from intended sample count and rate
 
 ### **Sampling Strategy**
 - Files ≤ graph-samples: Uses all samples
