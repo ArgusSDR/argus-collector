@@ -38,6 +38,7 @@ var (
 	longitude   float64 // Manual longitude in decimal degrees
 	altitude    float64 // Manual altitude in meters
 	device      string  // RTL-SDR device selection (serial number or index)
+	biasTeeFlag bool    // Enable bias tee for external LNA power
 	showVersion bool    // Show version information
 )
 
@@ -108,6 +109,7 @@ func init() {
 	
 	// RTL-SDR device selection
 	rootCmd.Flags().StringVarP(&device, "device", "D", "", "RTL-SDR device selection (serial number or index)")
+	rootCmd.Flags().BoolVar(&biasTeeFlag, "bias-tee", false, "enable bias tee for powering external LNAs")
 	
 	// Add subcommands
 	rootCmd.AddCommand(devicesCmd)
@@ -127,6 +129,7 @@ func init() {
 	viper.BindPFlag("gps.disable", rootCmd.Flags().Lookup("disable-gps"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	viper.BindPFlag("rtlsdr.device", rootCmd.Flags().Lookup("device"))
+	viper.BindPFlag("rtlsdr.bias_tee", rootCmd.Flags().Lookup("bias-tee"))
 }
 
 // initConfig reads in config file and ENV variables if set
@@ -180,6 +183,12 @@ func runCollector(cmd *cobra.Command) error {
 		cfg.RTLSDR.SampleRate = uint32(viperSampleRate)
 	}
 
+	// Fix: Manually override bias tee config from viper since unmarshal isn't working for nested fields
+	viperBiasTee := viper.GetBool("rtlsdr.bias_tee")
+	if viperBiasTee != cfg.RTLSDR.BiasTee {
+		cfg.RTLSDR.BiasTee = viperBiasTee
+	}
+
 	// Handle device selection from command line flag
 	if cmd.Flags().Changed("device") {
 		// Device flag explicitly set - override config file values
@@ -195,6 +204,11 @@ func runCollector(cmd *cobra.Command) error {
 			cfg.RTLSDR.SerialNumber = deviceSelection
 			cfg.RTLSDR.DeviceIndex = -1 // Set to -1 to indicate serial number should be used
 		}
+	}
+
+	// Handle bias tee flag override
+	if cmd.Flags().Changed("bias-tee") {
+		cfg.RTLSDR.BiasTee = biasTeeFlag
 	}
 
 	// Handle explicit command line flags that should override config file

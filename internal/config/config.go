@@ -20,6 +20,7 @@ type RTLSDRConfig struct {
 	Gain         float64 `yaml:"gain"`          // RF gain in dB
 	DeviceIndex  int     `yaml:"device_index"`  // RTL-SDR device index (0-based, used if SerialNumber is empty)
 	SerialNumber string  `yaml:"serial_number"` // RTL-SDR device serial number (preferred over device_index)
+	BiasTee      bool    `yaml:"bias_tee"`      // Enable bias tee for powering external LNAs
 }
 
 // GPSConfig contains GPS receiver configuration parameters
@@ -59,6 +60,7 @@ func DefaultConfig() *Config {
 			Gain:         20.7,     // 20.7 dB gain
 			DeviceIndex:  0,        // First RTL-SDR device
 			SerialNumber: "",       // Use device_index by default
+			BiasTee:      false,    // Bias tee disabled by default
 		},
 		GPS: GPSConfig{
 			Mode:            "nmea",           // Default to NMEA serial mode

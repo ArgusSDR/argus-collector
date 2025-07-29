@@ -66,6 +66,11 @@ func (c *Collector) Initialize() error {
 		return fmt.Errorf("failed to set RTL-SDR gain: %w", err)
 	}
 
+	// Set bias tee if enabled
+	if err := c.rtlsdr.SetBiasTee(c.config.RTLSDR.BiasTee); err != nil {
+		return fmt.Errorf("failed to set RTL-SDR bias tee: %w", err)
+	}
+
 	// Initialize GPS based on mode
 	gpsMode := c.config.GPS.Mode
 	// Handle backward compatibility with deprecated Disable flag

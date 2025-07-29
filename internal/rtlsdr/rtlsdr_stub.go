@@ -15,6 +15,7 @@ type Device struct {
 	frequency  uint32 // Stored frequency setting
 	sampleRate uint32 // Stored sample rate setting
 	gain       int    // Stored gain setting
+	biasTee    bool   // Stored bias tee setting
 }
 
 // IQSample represents a stub IQ sample structure (matches real implementation)
@@ -29,6 +30,7 @@ func NewDevice(deviceIndex int) (*Device, error) {
 		frequency:  433920000, // Default frequency
 		sampleRate: 2048000,   // Default sample rate
 		gain:       20,        // Default gain
+		biasTee:    false,     // Default bias tee off
 	}, nil
 }
 
@@ -38,6 +40,7 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 		frequency:  433920000, // Default frequency
 		sampleRate: 2048000,   // Default sample rate
 		gain:       20,        // Default gain
+		biasTee:    false,     // Default bias tee off
 	}, nil
 }
 
@@ -150,10 +153,20 @@ func (d *Device) EnableAGC(enable bool) error {
 	return nil
 }
 
+// SetBiasTee stub method - stores bias tee setting
+func (d *Device) SetBiasTee(enable bool) error {
+	d.biasTee = enable
+	return nil
+}
+
 // GetDeviceInfo stub method - returns mock device info
 func (d *Device) GetDeviceInfo() (string, error) {
-	return fmt.Sprintf("RTL-SDR Stub Device (freq: %d Hz, rate: %d Hz, gain: %.1f dB)", 
-		d.frequency, d.sampleRate, float64(d.gain)/10), nil
+	biasStatus := "off"
+	if d.biasTee {
+		biasStatus = "on"
+	}
+	return fmt.Sprintf("RTL-SDR Stub Device (freq: %d Hz, rate: %d Hz, gain: %.1f dB, bias-tee: %s)", 
+		d.frequency, d.sampleRate, float64(d.gain)/10, biasStatus), nil
 }
 
 // StartCollection stub method - simulates collection for testing with proper timeout handling

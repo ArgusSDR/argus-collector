@@ -18,6 +18,7 @@ type Device struct {
 	frequency  uint32          // Current tuned frequency in Hz
 	sampleRate uint32          // Current sample rate in Hz
 	gain       int             // Current gain in tenths of dB
+	biasTee    bool            // Bias tee enabled state
 }
 
 // IQSample represents a collected set of IQ samples with timestamp
@@ -223,6 +224,17 @@ func (d *Device) EnableAGC(enable bool) error {
 	return nil
 }
 
+// SetBiasTee enables or disables the bias tee for powering external LNAs
+// enable: true to enable bias tee (provide DC power), false to disable
+func (d *Device) SetBiasTee(enable bool) error {
+	// Use the SetBiasTee function from the gortlsdr library
+	if err := d.dev.SetBiasTee(enable); err != nil {
+		return fmt.Errorf("failed to set bias tee to %v: %w", enable, err)
+	}
+	d.biasTee = enable
+	return nil
+}
+
 // GetDeviceInfo returns a formatted string with device information
 func (d *Device) GetDeviceInfo() (string, error) {
 	// Get device name from USB strings
@@ -231,8 +243,12 @@ func (d *Device) GetDeviceInfo() (string, error) {
 		return "", fmt.Errorf("failed to get device info: %w", err)
 	}
 	// Format device info with current settings
-	return fmt.Sprintf("%s (freq: %d Hz, rate: %d Hz, gain: %.1f dB)", 
-		name, d.frequency, d.sampleRate, float64(d.gain)/10), nil
+	biasStatus := "off"
+	if d.biasTee {
+		biasStatus = "on"
+	}
+	return fmt.Sprintf("%s (freq: %d Hz, rate: %d Hz, gain: %.1f dB, bias-tee: %s)", 
+		name, d.frequency, d.sampleRate, float64(d.gain)/10, biasStatus), nil
 }
 
 // StartCollection collects IQ samples from RTL-SDR for specified duration
