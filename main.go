@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,6 +39,8 @@ var (
 	longitude   float64 // Manual longitude in decimal degrees
 	altitude    float64 // Manual altitude in meters
 	device      string  // RTL-SDR device selection (serial number or index)
+	gain        float64 // Manual gain setting in dB
+	gainMode    string  // Gain mode: auto or manual
 	biasTeeFlag bool    // Enable bias tee for external LNA power
 	showVersion bool    // Show version information
 )
@@ -54,7 +57,7 @@ and GPS positioning data for Time Difference of Arrival (TDOA) analysis.`,
 			fmt.Println(version.GetVersionInfo("Argus Collector"))
 			return
 		}
-		
+
 		if err := runCollector(cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -86,34 +89,36 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./config.yaml", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "show version information")
-	
+
 	// Command-specific flags
 	rootCmd.Flags().Float64VarP(&frequency, "frequency", "f", 433.92e6, "frequency to monitor (Hz)")
 	rootCmd.Flags().StringVarP(&duration, "duration", "d", "60s", "collection duration")
 	rootCmd.Flags().StringVarP(&output, "output", "o", "./data", "output directory")
 	rootCmd.Flags().BoolVar(&syncedStart, "synced-start", true, "enable delayed/synchronized start time (true|false)")
-	
+
 	// GPS configuration options
 	rootCmd.Flags().StringVar(&gpsMode, "gps-mode", "nmea", "GPS mode: nmea, gpsd, or manual")
 	rootCmd.Flags().StringVarP(&gpsPort, "gps-port", "p", "/dev/ttyUSB0", "GPS serial port (for NMEA mode)")
 	rootCmd.Flags().StringVar(&gpsdHost, "gpsd-host", "localhost", "GPSD host address (for gpsd mode)")
 	rootCmd.Flags().StringVar(&gpsdPort, "gpsd-port", "2947", "GPSD port (for gpsd mode)")
-	
+
 	// Manual GPS coordinates (for manual mode)
 	rootCmd.Flags().Float64Var(&latitude, "latitude", 0.0, "manual latitude in decimal degrees (for manual mode)")
 	rootCmd.Flags().Float64Var(&longitude, "longitude", 0.0, "manual longitude in decimal degrees (for manual mode)")
 	rootCmd.Flags().Float64Var(&altitude, "altitude", 0.0, "manual altitude in meters (for manual mode)")
-	
+
 	// Deprecated GPS options (for backward compatibility)
 	rootCmd.Flags().BoolVar(&disableGPS, "disable-gps", false, "disable GPS hardware and use manual coordinates (deprecated: use --gps-mode=manual)")
-	
-	// RTL-SDR device selection
+
+	// RTL-SDR device selection and gain control
 	rootCmd.Flags().StringVarP(&device, "device", "D", "", "RTL-SDR device selection (serial number or index)")
+	rootCmd.Flags().Float64VarP(&gain, "gain", "g", 20.7, "manual gain setting in dB (used when gain-mode is manual)")
+	rootCmd.Flags().StringVar(&gainMode, "gain-mode", "manual", "gain control mode: auto (AGC) or manual")
 	rootCmd.Flags().BoolVar(&biasTeeFlag, "bias-tee", false, "enable bias tee for powering external LNAs")
-	
+
 	// Add subcommands
 	rootCmd.AddCommand(devicesCmd)
-	
+
 	// Bind command line flags to viper configuration keys
 	viper.BindPFlag("rtlsdr.frequency", rootCmd.Flags().Lookup("frequency"))
 	viper.BindPFlag("collection.duration", rootCmd.Flags().Lookup("duration"))
@@ -129,6 +134,8 @@ func init() {
 	viper.BindPFlag("gps.disable", rootCmd.Flags().Lookup("disable-gps"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	viper.BindPFlag("rtlsdr.device", rootCmd.Flags().Lookup("device"))
+	viper.BindPFlag("rtlsdr.gain", rootCmd.Flags().Lookup("gain"))
+	viper.BindPFlag("rtlsdr.gain_mode", rootCmd.Flags().Lookup("gain-mode"))
 	viper.BindPFlag("rtlsdr.bias_tee", rootCmd.Flags().Lookup("bias-tee"))
 }
 
@@ -157,19 +164,18 @@ func initConfig() {
 func runCollector(cmd *cobra.Command) error {
 	// Load default configuration
 	cfg := config.DefaultConfig()
-	
-	
+
 	// Override with values from config file and command line flags
 	if err := viper.Unmarshal(cfg); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	
+
 	// Fix: Manually override GPS coordinates from viper since unmarshal isn't working for nested fields
 	if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
 		viperLat := viper.GetFloat64("gps.manual_latitude")
 		viperLon := viper.GetFloat64("gps.manual_longitude")
 		viperAlt := viper.GetFloat64("gps.manual_altitude")
-		
+
 		if viperLat != 0.0 || viperLon != 0.0 {
 			cfg.GPS.ManualLatitude = viperLat
 			cfg.GPS.ManualLongitude = viperLon
@@ -193,16 +199,36 @@ func runCollector(cmd *cobra.Command) error {
 	if cmd.Flags().Changed("device") {
 		// Device flag explicitly set - override config file values
 		deviceSelection := device
-		
-		// Try to parse as integer index first
-		if deviceIndex, err := strconv.Atoi(deviceSelection); err == nil {
-			// It's a device index
-			cfg.RTLSDR.DeviceIndex = deviceIndex
-			cfg.RTLSDR.SerialNumber = "" // Clear serial number when using index
+
+		// Treat as serial number if it contains non-digit characters or is longer than reasonable for an index
+		// Also treat leading zeros as indication of serial number (e.g., "00000001")
+		isSerial := false
+		if len(deviceSelection) > 2 || strings.HasPrefix(deviceSelection, "0") && len(deviceSelection) > 1 {
+			isSerial = true
 		} else {
+			// Check if it contains non-digit characters
+			for _, r := range deviceSelection {
+				if r < '0' || r > '9' {
+					isSerial = true
+					break
+				}
+			}
+		}
+
+		if isSerial {
 			// It's a serial number
 			cfg.RTLSDR.SerialNumber = deviceSelection
 			cfg.RTLSDR.DeviceIndex = -1 // Set to -1 to indicate serial number should be used
+		} else {
+			// Try to parse as device index
+			if deviceIndex, err := strconv.Atoi(deviceSelection); err == nil {
+				cfg.RTLSDR.DeviceIndex = deviceIndex
+				cfg.RTLSDR.SerialNumber = "" // Clear serial number when using index
+			} else {
+				// Fallback to treating as serial number
+				cfg.RTLSDR.SerialNumber = deviceSelection
+				cfg.RTLSDR.DeviceIndex = -1
+			}
 		}
 	}
 
@@ -220,7 +246,7 @@ func runCollector(cmd *cobra.Command) error {
 		// Use viper value (config file or default)
 		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
 	}
-	
+
 	// Handle GPS mode configuration and backward compatibility
 	if disableGPS {
 		// Backward compatibility: --disable-gps flag overrides mode
@@ -289,11 +315,11 @@ func runCollector(cmd *cobra.Command) error {
 	fmt.Printf("Duration: %v\n", cfg.Collection.Duration)
 	fmt.Printf("Output: %s\n", cfg.Collection.OutputDir)
 	fmt.Printf("Synchronized Start: %t\n", cfg.Collection.SyncedStart)
-	
+
 	switch cfg.GPS.Mode {
 	case "manual":
 		fmt.Printf("GPS: MANUAL MODE (using fixed coordinates)\n")
-		fmt.Printf("Location: %.8f°, %.8f° (%.1f m)\n", 
+		fmt.Printf("Location: %.8f°, %.8f° (%.1f m)\n",
 			cfg.GPS.ManualLatitude, cfg.GPS.ManualLongitude, cfg.GPS.ManualAltitude)
 	case "nmea":
 		fmt.Printf("GPS: NMEA MODE (serial port %s)\n", cfg.GPS.Port)
@@ -305,34 +331,34 @@ func runCollector(cmd *cobra.Command) error {
 	// This ensures Ctrl-C works even during initialization
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	// Create a context that can be cancelled by signal
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	// Handle interrupt signals in a separate goroutine
 	go func() {
 		<-sigChan
 		fmt.Printf("\nReceived interrupt signal, shutting down...\n")
-		cancel() // Cancel the context to stop all operations
+		cancel()   // Cancel the context to stop all operations
 		os.Exit(1) // Force exit if graceful shutdown takes too long
 	}()
 
 	// Create and initialize collector
 	c := collector.NewCollector(cfg)
-	
+
 	// Check for cancellation before initialization
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("cancelled during setup")
 	default:
 	}
-	
+
 	if err := c.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize collector: %w", err)
 	}
 	defer c.Close()
-	
+
 	// Enable GPS debug mode if verbose logging is enabled
 	if viper.GetBool("verbose") {
 		c.SetGPSDebug(true)
@@ -372,10 +398,10 @@ func listDevices() error {
 	if err != nil {
 		return fmt.Errorf("failed to list RTL-SDR devices: %w", err)
 	}
-	
+
 	fmt.Printf("Available RTL-SDR Devices:\n")
 	fmt.Printf("=============================\n\n")
-	
+
 	for _, device := range devices {
 		fmt.Printf("Device %d:\n", device.Index)
 		fmt.Printf("  Name:         %s\n", device.Name)
@@ -384,7 +410,7 @@ func listDevices() error {
 		fmt.Printf("  Serial:       %s\n", device.SerialNumber)
 		fmt.Printf("\n")
 	}
-	
+
 	fmt.Printf("Configuration Examples:\n")
 	fmt.Printf("======================\n")
 	fmt.Printf("# Use device by index (traditional method)\n")
@@ -393,7 +419,7 @@ func listDevices() error {
 	fmt.Printf("# Use device by serial number (recommended)\n")
 	fmt.Printf("rtlsdr:\n")
 	fmt.Printf("  serial_number: \"00000001\"\n\n")
-	
+
 	return nil
 }
 

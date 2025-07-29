@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,8 +63,16 @@ func (c *Collector) Initialize() error {
 		return fmt.Errorf("failed to set RTL-SDR sample rate: %w", err)
 	}
 
-	if err := c.rtlsdr.SetGain(c.config.RTLSDR.Gain); err != nil {
-		return fmt.Errorf("failed to set RTL-SDR gain: %w", err)
+	// Set gain mode first
+	if err := c.rtlsdr.SetGainMode(c.config.RTLSDR.GainMode); err != nil {
+		return fmt.Errorf("failed to set RTL-SDR gain mode: %w", err)
+	}
+
+	// Set manual gain if in manual mode
+	if c.config.RTLSDR.GainMode == "manual" {
+		if err := c.rtlsdr.SetGain(c.config.RTLSDR.Gain); err != nil {
+			return fmt.Errorf("failed to set RTL-SDR gain: %w", err)
+		}
 	}
 
 	// Set bias tee if enabled
@@ -77,7 +86,7 @@ func (c *Collector) Initialize() error {
 	if c.config.GPS.Disable {
 		gpsMode = "manual"
 	}
-	
+
 	switch gpsMode {
 	case "nmea":
 		c.gps, err = gps.NewGPS(c.config.GPS.Port, c.config.GPS.BaudRate)
@@ -124,28 +133,28 @@ func (c *Collector) WaitForGPSFixWithContext(ctx context.Context) error {
 	if c.config.GPS.Disable {
 		gpsMode = "manual"
 	}
-	
+
 	if gpsMode == "manual" {
 		// GPS is disabled, use manual coordinates
-		fmt.Printf("GPS disabled - using manual coordinates: %.8f°, %.8f°\n", 
+		fmt.Printf("GPS disabled - using manual coordinates: %.8f°, %.8f°\n",
 			c.config.GPS.ManualLatitude, c.config.GPS.ManualLongitude)
 		return nil
 	}
 
 	fmt.Printf("Waiting for GPS fix via %s (timeout: %v)...\n", gpsMode, c.config.GPS.Timeout)
-	
+
 	// Create a channel for GPS fix result
 	type gpsResult struct {
 		pos *gps.Position
 		err error
 	}
-	
+
 	gpsResultChan := make(chan gpsResult, 1)
 	go func() {
 		pos, err := c.gps.WaitForFix(c.config.GPS.Timeout)
 		gpsResultChan <- gpsResult{pos, err}
 	}()
-	
+
 	// Wait for GPS fix or context cancellation
 	var position *gps.Position
 	select {
@@ -171,15 +180,15 @@ func (c *Collector) Collect() error {
 
 func (c *Collector) CollectWithContext(ctx context.Context) error {
 	var startTime time.Time
-	
+
 	if c.config.Collection.SyncedStart {
 		startTime = c.calculateSyncedStartTime()
 		fmt.Printf("Synchronized start enabled - waiting until: %s\n", startTime.Format("15:04:05.000"))
-		
+
 		waitDuration := time.Until(startTime)
 		if waitDuration > 0 {
 			fmt.Printf("Waiting %.3f seconds for synchronized start...\n", waitDuration.Seconds())
-			
+
 			// Wait for sync start time or context cancellation
 			select {
 			case <-time.After(waitDuration):
@@ -192,14 +201,17 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 		fmt.Printf("Synchronized start disabled - starting immediately\n")
 		startTime = time.Now()
 	}
-	
-	collectionID := fmt.Sprintf("%s_%d", c.config.Collection.FilePrefix, startTime.Unix())
-	
+
+	// Generate device identifier for filename
+	deviceID := c.getDeviceIdentifier()
+
+	collectionID := fmt.Sprintf("%s-%s_%d", c.config.Collection.FilePrefix, deviceID, startTime.Unix())
+
 	fmt.Printf("Starting collection (ID: %s)\n", collectionID)
 	fmt.Printf("Duration: %v\n", c.config.Collection.Duration)
-	fmt.Printf("Collection timeouts: RTL-SDR data expected within %v, maximum wait time %v\n", 
+	fmt.Printf("Collection timeouts: RTL-SDR data expected within %v, maximum wait time %v\n",
 		c.config.Collection.Duration+10*time.Second, c.config.Collection.Duration+20*time.Second)
-	
+
 	deviceInfo, err := c.rtlsdr.GetDeviceInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get device info: %w", err)
@@ -207,7 +219,7 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 	fmt.Printf("Device: %s\n", deviceInfo)
 
 	samplesChan := make(chan rtlsdr.IQSample, 1)
-	
+
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -220,7 +232,7 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 
 	// Create a done channel to coordinate goroutine completion
 	done := make(chan error, 1)
-	
+
 	// Handle the collection result in a separate goroutine
 	go func() {
 		select {
@@ -230,12 +242,12 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 				return
 			}
 			var gpsPosition gps.Position
-			
+
 			gpsMode := c.config.GPS.Mode
 			if c.config.GPS.Disable {
 				gpsMode = "manual"
 			}
-			
+
 			if gpsMode == "manual" {
 				// Use manual coordinates when GPS is disabled
 				gpsPosition = gps.Position{
@@ -312,6 +324,13 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 }
 
 func (c *Collector) saveData(filename string, data CollectionData) error {
+	// Get actual device information including gain settings
+	deviceInfo, err := c.rtlsdr.GetDeviceInfo()
+	if err != nil {
+		// Fallback to basic device info if GetDeviceInfo fails
+		deviceInfo = fmt.Sprintf("RTL-SDR Device %d", c.config.RTLSDR.DeviceIndex)
+	}
+
 	metadata := filewriter.Metadata{
 		Frequency:      uint64(c.config.RTLSDR.Frequency),
 		SampleRate:     c.config.RTLSDR.SampleRate,
@@ -322,7 +341,7 @@ func (c *Collector) saveData(filename string, data CollectionData) error {
 			Altitude:  data.GPSPosition.Altitude,
 		},
 		GPSTimestamp:      data.GPSPosition.Timestamp,
-		DeviceInfo:        fmt.Sprintf("RTL-SDR Device %d", c.config.RTLSDR.DeviceIndex),
+		DeviceInfo:        deviceInfo,
 		FileFormatVersion: 1,
 		CollectionID:      data.CollectionID,
 	}
@@ -330,23 +349,39 @@ func (c *Collector) saveData(filename string, data CollectionData) error {
 	return c.writer.WriteFile(filename, metadata, data.IQSamples.Data)
 }
 
+// getDeviceIdentifier returns a device identifier for use in filenames
+// Prefers serial number if available, otherwise uses device index
+func (c *Collector) getDeviceIdentifier() string {
+	if c.config.RTLSDR.SerialNumber != "" {
+		// Use serial number if available (clean it for filename safety)
+		serialClean := strings.ReplaceAll(c.config.RTLSDR.SerialNumber, " ", "")
+		return serialClean
+	}
+	// Use device index (but handle -1 case when serial number should be used)
+	if c.config.RTLSDR.DeviceIndex >= 0 {
+		return fmt.Sprintf("%d", c.config.RTLSDR.DeviceIndex)
+	}
+	// Fallback for invalid configurations
+	return "unknown"
+}
+
 func (c *Collector) calculateSyncedStartTime() time.Time {
 	now := time.Now()
 	currentEpoch := now.Unix()
-	
+
 	// Add 5 seconds to current epoch time, then mod 100 for sync point
 	futureEpoch := currentEpoch + 5
 	syncPoint := futureEpoch % 100
-	
+
 	// Find next time when seconds field equals syncPoint
-	nextMinute := (currentEpoch/60 + 1) * 60  // Start of next minute
+	nextMinute := (currentEpoch/60 + 1) * 60 // Start of next minute
 	targetTime := nextMinute + int64(syncPoint)
-	
+
 	// If target is in the past, add another minute
 	if targetTime <= currentEpoch {
 		targetTime += 60
 	}
-	
+
 	return time.Unix(targetTime, 0)
 }
 
@@ -364,24 +399,24 @@ func (c *Collector) SetGPSDebug(debug bool) {
 
 func (c *Collector) Close() error {
 	c.Stop()
-	
+
 	var errors []error
-	
+
 	if c.rtlsdr != nil {
 		if err := c.rtlsdr.Close(); err != nil {
 			errors = append(errors, fmt.Errorf("RTL-SDR close error: %w", err))
 		}
 	}
-	
+
 	if c.gps != nil {
 		if err := c.gps.Close(); err != nil {
 			errors = append(errors, fmt.Errorf("GPS close error: %w", err))
 		}
 	}
-	
+
 	if len(errors) > 0 {
 		return fmt.Errorf("cleanup errors: %v", errors)
 	}
-	
+
 	return nil
 }

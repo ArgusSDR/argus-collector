@@ -17,7 +17,8 @@ type Config struct {
 type RTLSDRConfig struct {
 	Frequency    float64 `yaml:"frequency"`     // RF frequency in Hz
 	SampleRate   uint32  `yaml:"sample_rate"`   // Sample rate in Hz
-	Gain         float64 `yaml:"gain"`          // RF gain in dB
+	Gain         float64 `yaml:"gain"`          // RF gain in dB (used when GainMode is "manual")
+	GainMode     string  `yaml:"gain_mode"`     // Gain mode: "auto" (AGC) or "manual"
 	DeviceIndex  int     `yaml:"device_index"`  // RTL-SDR device index (0-based, used if SerialNumber is empty)
 	SerialNumber string  `yaml:"serial_number"` // RTL-SDR device serial number (preferred over device_index)
 	BiasTee      bool    `yaml:"bias_tee"`      // Enable bias tee for powering external LNAs
@@ -58,13 +59,14 @@ func DefaultConfig() *Config {
 			Frequency:    433.92e6, // 433.92 MHz ISM band
 			SampleRate:   2048000,  // 2.048 MSps
 			Gain:         20.7,     // 20.7 dB gain
+			GainMode:     "manual", // Manual gain control by default
 			DeviceIndex:  0,        // First RTL-SDR device
 			SerialNumber: "",       // Use device_index by default
 			BiasTee:      false,    // Bias tee disabled by default
 		},
 		GPS: GPSConfig{
 			Mode:            "nmea",           // Default to NMEA serial mode
-			Port:            "/dev/ttyUSB0",    // Common USB GPS device path
+			Port:            "/dev/ttyUSB0",   // Common USB GPS device path
 			BaudRate:        9600,             // Standard NMEA baud rate
 			GPSDHost:        "localhost",      // Default gpsd host
 			GPSDPort:        "2947",           // Default gpsd port

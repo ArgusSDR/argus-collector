@@ -148,19 +148,19 @@ func (n *NMEASerial) Start() error {
 func (n *NMEASerial) readLoop() {
 	scanner := bufio.NewScanner(n.port)
 	log.Printf("GPS: Starting NMEA read loop")
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		if n.debug {
 			log.Printf("GPS: Received NMEA: %s", line)
 		}
-		
+
 		// Skip empty lines
 		if len(line) == 0 {
 			continue
 		}
-		
+
 		sentence, err := nmea.Parse(line)
 		if err != nil {
 			if n.debug {
@@ -176,7 +176,7 @@ func (n *NMEASerial) readLoop() {
 			n.processRMC(s)
 		}
 	}
-	
+
 	// Check for scanner errors
 	if err := scanner.Err(); err != nil {
 		log.Printf("GPS: Scanner error: %v", err)
@@ -186,10 +186,10 @@ func (n *NMEASerial) readLoop() {
 
 func (n *NMEASerial) processGGA(s nmea.GGA) {
 	if n.debug {
-		log.Printf("GPS: Processing GGA - Quality: %v, Lat: %f, Lon: %f, Sats: %d", 
+		log.Printf("GPS: Processing GGA - Quality: %v, Lat: %f, Lon: %f, Sats: %d",
 			s.FixQuality, s.Latitude, s.Longitude, s.NumSatellites)
 	}
-	
+
 	if s.FixQuality != nmea.Invalid {
 		var fixQuality int
 		switch s.FixQuality {
@@ -208,7 +208,7 @@ func (n *NMEASerial) processGGA(s nmea.GGA) {
 		default:
 			fixQuality = 0
 		}
-		
+
 		// Only process coordinates when we have a valid fix quality
 		// Some GPS receivers output (0,0) when they don't have a fix yet, but
 		// if fix quality is valid, we should trust the coordinates
@@ -221,16 +221,16 @@ func (n *NMEASerial) processGGA(s nmea.GGA) {
 				FixQuality: fixQuality,
 				Satellites: int(s.NumSatellites),
 			}
-			
+
 			n.mu.Lock()
 			n.position = pos
 			n.mu.Unlock()
-			
+
 			if n.debug {
 				log.Printf("GPS: Updated position - Lat: %.6f, Lon: %.6f, Alt: %.1f, Quality: %d, Sats: %d",
 					pos.Latitude, pos.Longitude, pos.Altitude, pos.FixQuality, pos.Satellites)
 			}
-			
+
 			select {
 			case n.fixChan <- pos:
 			default:
@@ -242,16 +242,16 @@ func (n *NMEASerial) processGGA(s nmea.GGA) {
 func (n *NMEASerial) processRMC(s nmea.RMC) {
 	// RMC provides additional validation and time info
 	if n.debug {
-		log.Printf("GPS: Processing RMC - Valid: %t, Lat: %f, Lon: %f", 
+		log.Printf("GPS: Processing RMC - Valid: %t, Lat: %f, Lon: %f",
 			s.Validity == "A", s.Latitude, s.Longitude)
 	}
-	
+
 	// Use RMC to supplement/validate position if we have one
 	if s.Validity == "A" {
 		n.mu.RLock()
 		currentPos := n.position
 		n.mu.RUnlock()
-		
+
 		// If we have a current position, update with RMC timestamp if more recent
 		if currentPos.FixQuality > 0 {
 			// Convert NMEA time to Go time.Time
@@ -261,12 +261,12 @@ func (n *NMEASerial) processRMC(s nmea.RMC) {
 				// Use today's date with the GPS time
 				rncTime = time.Date(
 					rncTime.Year(), rncTime.Month(), rncTime.Day(),
-					s.Time.Hour, s.Time.Minute, s.Time.Second, 
-					int(s.Time.Millisecond)*1000000, // Convert ms to ns  
+					s.Time.Hour, s.Time.Minute, s.Time.Second,
+					int(s.Time.Millisecond)*1000000, // Convert ms to ns
 					time.UTC,
 				)
 			}
-			
+
 			pos := Position{
 				Latitude:   s.Latitude,
 				Longitude:  s.Longitude,
@@ -275,7 +275,7 @@ func (n *NMEASerial) processRMC(s nmea.RMC) {
 				FixQuality: currentPos.FixQuality,
 				Satellites: currentPos.Satellites,
 			}
-			
+
 			n.mu.Lock()
 			n.position = pos
 			n.mu.Unlock()
@@ -302,11 +302,11 @@ func (n *NMEASerial) WaitForFix(timeout time.Duration) (*Position, error) {
 func (n *NMEASerial) GetCurrentPosition() (*Position, error) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	
+
 	if n.position.FixQuality == 0 {
 		return nil, fmt.Errorf("no GPS fix available")
 	}
-	
+
 	pos := n.position
 	return &pos, nil
 }
@@ -321,7 +321,7 @@ func (n *NMEASerial) GetFixQualityString() string {
 	n.mu.RLock()
 	quality := n.position.FixQuality
 	n.mu.RUnlock()
-	
+
 	switch quality {
 	case 0:
 		return "Invalid"
@@ -378,16 +378,16 @@ func (g *GPSDClient) Start() error {
 			return fmt.Errorf("failed to connect to gpsd: %w", err)
 		}
 	}
-	
+
 	g.client = client
-	
+
 	// Start watching for GPS data
 	g.client.AddFilter("TPV", func(r interface{}) {
 		tpv, ok := r.(*gpsd.TPVReport)
 		if !ok {
 			return
 		}
-		
+
 		// Convert gpsd fix mode to our quality system
 		var fixQuality int
 		switch tpv.Mode {
@@ -400,7 +400,7 @@ func (g *GPSDClient) Start() error {
 		default:
 			fixQuality = 0
 		}
-		
+
 		// Only process valid fixes
 		if fixQuality > 0 && tpv.Lat != 0 && tpv.Lon != 0 {
 			pos := Position{
@@ -411,32 +411,32 @@ func (g *GPSDClient) Start() error {
 				FixQuality: fixQuality,
 				Satellites: 0, // TPV doesn't include satellite count
 			}
-			
+
 			g.position = pos
-			
+
 			select {
 			case g.fixChan <- pos:
 			default:
 			}
 		}
 	})
-	
+
 	// Also watch for satellite info
 	g.client.AddFilter("SKY", func(r interface{}) {
 		sky, ok := r.(*gpsd.SKYReport)
 		if !ok {
 			return
 		}
-		
+
 		// Update satellite count in current position
 		if g.position.FixQuality > 0 {
 			g.position.Satellites = len(sky.Satellites)
 		}
 	})
-	
+
 	// Start watching
 	g.client.Watch()
-	
+
 	return nil
 }
 
@@ -460,7 +460,7 @@ func (g *GPSDClient) GetCurrentPosition() (*Position, error) {
 	if g.position.FixQuality == 0 {
 		return nil, fmt.Errorf("no GPS fix available")
 	}
-	
+
 	pos := g.position
 	return &pos, nil
 }

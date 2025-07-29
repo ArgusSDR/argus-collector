@@ -5,10 +5,14 @@ A high-precision RTL-SDR signal collection tool designed for Time Difference of 
 ## Features
 
 - **RTL-SDR Integration**: Direct interface with RTL-SDR hardware for IQ signal collection
+- **Advanced Gain Control**: Manual and automatic (AGC) gain control with optimal settings guidance
+- **Multi-Device Support**: Device selection by index or serial number with unique filename generation
 - **GPS Synchronization**: NMEA-compliant GPS receiver support for precise timing and positioning
 - **Synchronized Collection**: Epoch-based timing for coordinated multi-station data collection
 - **TDOA-Ready Output**: Custom binary format optimized for multi-station analysis
 - **Nanosecond Precision**: High-resolution timestamps for accurate time difference calculations
+- **Bias Tee Control**: Built-in bias tee support for powering external LNAs
+- **Enhanced Analysis Tools**: Comprehensive argus-reader with device configuration analysis
 - **Configurable Collection**: Flexible frequency, duration, and output settings
 - **Graceful Operation**: Signal handling and error recovery mechanisms
 
@@ -161,6 +165,9 @@ Flags:
 
 RTL-SDR Device Options:
   -D, --device string      RTL-SDR device selection (serial number or index)
+  -g, --gain float         manual gain setting in dB (used when gain-mode is manual) (default 20.7)
+      --gain-mode string   gain control mode: auto (AGC) or manual (default "manual")
+      --bias-tee           enable bias tee for powering external LNAs
 
 GPS Options:
       --gps-mode string    GPS mode: nmea, gpsd, or manual (default "nmea")
@@ -194,8 +201,14 @@ GPS Options:
 # Manual GPS coordinates (no hardware required)
 ./argus-collector --gps-mode manual --latitude 35.533 --longitude -97.621 --altitude 365
 
-# Custom frequency and duration with device selection
-./argus-collector -D STATION01 --frequency 915e6 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
+# Custom frequency and duration with device selection and gain control
+./argus-collector -D STATION01 --frequency 915e6 --duration 30s --gain-mode manual --gain 25.0 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Enable bias tee for external LNA
+./argus-collector --bias-tee --gain-mode manual --gain 15.0 --frequency 433.92e6 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Use AGC for variable signal conditions
+./argus-collector --gain-mode auto --frequency 868e6 --duration 60s --gps-mode manual --latitude 35.533 --longitude -97.621
 
 # Immediate start (no synchronization delay)
 ./argus-collector --frequency 433.92e6 --synced-start=false --gps-mode manual --latitude 35.533 --longitude -97.621
@@ -254,6 +267,204 @@ GPS Options:
 ./argus-collector --frequency 446e6 --gps-mode manual --latitude 35.533 --longitude -97.621      # 70cm
 ```
 
+## RTL-SDR Gain Control
+
+Argus Collector provides advanced gain control capabilities for optimal signal collection across different environments and signal strengths.
+
+### Gain Control Modes
+
+#### Automatic Gain Control (AGC)
+AGC automatically adjusts the receiver gain based on signal strength:
+
+```bash
+# Enable AGC for varying signal conditions
+./argus-collector --gain-mode auto --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# AGC with custom frequency
+./argus-collector --frequency 915e6 --gain-mode auto --gps-mode manual --latitude 35.533 --longitude -97.621
+```
+
+**When to use AGC:**
+- **Variable signal environments**: When signal strength changes significantly
+- **Wide-area surveillance**: Monitoring multiple transmitters with different power levels
+- **Unknown signal conditions**: When optimal gain setting is uncertain
+- **Unattended operation**: Long-term deployments with changing conditions
+
+**AGC Considerations:**
+- May introduce gain variations that affect TDOA accuracy
+- Automatic adjustments can mask weak signals in presence of strong ones
+- Less predictable behavior for analysis requiring consistent gain
+
+#### Manual Gain Control
+Manual gain provides consistent, predictable receiver behavior:
+
+```bash
+# Manual gain for consistent collection
+./argus-collector --gain-mode manual --gain 20.7 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# High gain for weak signals
+./argus-collector --gain-mode manual --gain 40.2 --frequency 433.92e6 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Low gain to prevent overload from strong signals
+./argus-collector --gain-mode manual --gain 5.0 --frequency 915e6 --gps-mode manual --latitude 35.533 --longitude -97.621
+```
+
+**When to use Manual Gain:**
+- **TDOA analysis**: Consistent gain across all receiving stations
+- **Known signal environments**: When optimal gain can be determined
+- **Weak signal detection**: Maximum sensitivity for distant transmitters
+- **Strong signal handling**: Prevent receiver overload near transmitters
+
+### Gain Setting Guidelines
+
+| Gain Range | Use Case | Signal Environment |
+|------------|----------|-------------------|
+| **0.0 - 10.0 dB** | Strong signals | Near transmitters, prevent overload |
+| **10.0 - 30.0 dB** | Medium signals | General purpose, typical range |
+| **30.0 - 50.0 dB** | Weak signals | Distant transmitters, maximum sensitivity |
+| **AUTO (AGC)** | Variable conditions | Changing signal strength, unattended operation |
+
+### Optimal Gain Selection
+
+#### Step 1: Determine Signal Environment
+```bash
+# Test with different gain settings to find optimal range
+./argus-collector --gain-mode manual --gain 10.0 --duration 10s --gps-mode manual --latitude 35.533 --longitude -97.621
+./argus-collector --gain-mode manual --gain 20.7 --duration 10s --gps-mode manual --latitude 35.533 --longitude -97.621
+./argus-collector --gain-mode manual --gain 35.0 --duration 10s --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Analyze results with argus-reader
+./argus-reader --stats data/argus-0_*.dat
+```
+
+#### Step 2: Analyze Signal Quality
+Use the argus-reader with device analysis to evaluate gain settings:
+
+```bash
+# Examine signal characteristics and gain configuration
+./argus-reader --device-analysis data/argus-0_*.dat
+```
+
+#### Step 3: Multi-Station Consistency
+For TDOA applications, use identical gain settings across all stations:
+
+```bash
+# Station 1 with specific gain
+./argus-collector -D NORTH001 --gain-mode manual --gain 25.0 --frequency 433.92e6 --gps-mode nmea --gps-port /dev/ttyACM0
+
+# Station 2 with same gain setting
+./argus-collector -D SOUTH001 --gain-mode manual --gain 25.0 --frequency 433.92e6 --gps-mode nmea --gps-port /dev/ttyACM0
+
+# Station 3 with same gain setting
+./argus-collector -D EAST0001 --gain-mode manual --gain 25.0 --frequency 433.92e6 --gps-mode nmea --gps-port /dev/ttyACM0
+```
+
+### Bias Tee Support
+
+The bias tee provides DC power through the antenna port to power external Low Noise Amplifiers (LNAs):
+
+```bash
+# Enable bias tee for external LNA
+./argus-collector --bias-tee --gain-mode manual --gain 15.0 --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Bias tee with AGC (LNA provides additional gain)
+./argus-collector --bias-tee --gain-mode auto --frequency 1090e6 --gps-mode manual --latitude 35.533 --longitude -97.621
+```
+
+**Bias Tee Guidelines:**
+- **Enable** when using external LNAs requiring power
+- **Disable** when using passive antennas or powered LNAs
+- **Check compatibility** - not all RTL-SDR devices support bias tee
+- **Verify current rating** - ensure LNA power requirements are within device limits
+
+### Advanced Gain Control Examples
+
+```bash
+# High-sensitivity setup for weak signals
+./argus-collector --gain-mode manual --gain 40.2 --bias-tee --frequency 433.92e6 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Strong signal environment near transmitter
+./argus-collector --gain-mode manual --gain 2.0 --frequency 915e6 --duration 30s --gps-mode manual --latitude 35.533 --longitude -97.621
+
+# Multi-device TDOA setup with consistent gain
+./argus-collector -D 0 --gain-mode manual --gain 25.0 --frequency 433.92e6 --output station1/ --gps-mode manual --latitude 35.5331 --longitude -97.6213
+./argus-collector -D 1 --gain-mode manual --gain 25.0 --frequency 433.92e6 --output station2/ --gps-mode manual --latitude 35.5341 --longitude -97.6223
+./argus-collector -D 2 --gain-mode manual --gain 25.0 --frequency 433.92e6 --output station3/ --gps-mode manual --latitude 35.5351 --longitude -97.6233
+
+# Adaptive deployment with AGC
+./argus-collector --gain-mode auto --frequency 868e6 --duration 3600s --gps-mode gpsd --output ./monitoring/
+```
+
+## File Naming with Device Identification
+
+Argus Collector automatically includes device identification in output filenames to support multi-device deployments and ensure clear traceability.
+
+### Filename Format
+
+Files are named using the pattern: `{prefix}-{device_id}_{timestamp}.dat`
+
+- **prefix**: Configurable file prefix (default: "argus")
+- **device_id**: RTL-SDR device identifier (serial number or index)
+- **timestamp**: Unix timestamp when collection started
+
+### Examples
+
+```bash
+# Device index 0
+./argus-collector -D 0 --duration 60s --gps-mode manual --latitude 35.533 --longitude -97.621
+# Creates: argus-0_1753824114.dat
+
+# Device index 1  
+./argus-collector -D 1 --duration 60s --gps-mode manual --latitude 35.533 --longitude -97.621
+# Creates: argus-1_1753824146.dat
+
+# Serial number device selection
+./argus-collector -D 00000001 --duration 60s --gps-mode manual --latitude 35.533 --longitude -97.621
+# Creates: argus-00000001_1753824383.dat
+
+# Custom serial number
+./argus-collector -D NORTH001 --duration 60s --gps-mode manual --latitude 35.533 --longitude -97.621
+# Creates: argus-NORTH001_1753824525.dat
+
+# Alphanumeric serial
+./argus-collector -D ABC123 --duration 60s --gps-mode manual --latitude 35.533 --longitude -97.621
+# Creates: argus-ABC123_1753824436.dat
+```
+
+### Multi-Station File Organization
+
+The device ID in filenames makes it easy to organize and analyze data from multiple collection stations:
+
+```
+data/
+├── argus-NORTH001_1753824525.dat    # North station
+├── argus-SOUTH001_1753824525.dat    # South station  
+├── argus-EAST0001_1753824525.dat    # East station
+└── argus-WEST0001_1753824525.dat    # West station
+```
+
+### Benefits for TDOA Analysis
+
+1. **Clear Station Identification**: Instantly identify which device collected each file
+2. **Batch Processing**: Process all files from a specific station using filename patterns
+3. **Quality Assurance**: Verify data collection across all stations
+4. **Automated Analysis**: Scripts can easily parse station information from filenames
+
+```bash
+# Analyze all data from a specific station
+./argus-reader data/argus-NORTH001_*.dat
+
+# Process all stations for a specific timestamp
+ls data/argus-*_1753824525.dat
+./argus-reader data/argus-*_1753824525.dat
+
+# Station-specific analysis
+for station in NORTH001 SOUTH001 EAST0001; do
+    echo "Analyzing station: $station"
+    ./argus-reader --stats data/argus-${station}_*.dat
+done
+```
+
 ### Configuration File
 
 Create a `config.yaml` file for persistent settings:
@@ -262,9 +473,11 @@ Create a `config.yaml` file for persistent settings:
 rtlsdr:
   frequency: 433.92e6      # Target frequency in Hz
   sample_rate: 2048000     # Sample rate in Hz
-  gain: 20.7               # RF gain in dB
+  gain: 20.7               # RF gain in dB (used when gain_mode is "manual")
+  gain_mode: "manual"      # Gain mode: "auto" (AGC) or "manual"
   device_index:            # RTL-SDR device index (used if serial_number is empty)
-  serial_number: ""        # RTL-SDR device serial number (preferred over device_index)
+  serial_number: ""        # RTL-SDR device serial number (preferred over device_index)  
+  bias_tee: false          # Enable bias tee for powering external LNAs
 
 gps:
   mode: "manual"             # GPS mode: "nmea", "gpsd", or "manual"  
@@ -597,52 +810,125 @@ This ensures all stations start collection at the same second, critical for TDOA
 ### Example Multi-Station Setup
 
 ```bash
-# Station 1 with device selection
-./argus-collector -D NORTH001 --frequency 433.92e6 --output station1/ --config station1.yaml
+# Station 1 with device selection and consistent gain
+./argus-collector -D NORTH001 --frequency 433.92e6 --gain-mode manual --gain 25.0 --output station1/ --config station1.yaml
+# Creates: station1/argus-NORTH001_timestamp.dat
 
-# Station 2 (different location, different device)
-./argus-collector -D SOUTH001 --frequency 433.92e6 --output station2/ --config station2.yaml
+# Station 2 (different location, different device, same gain)
+./argus-collector -D SOUTH001 --frequency 433.92e6 --gain-mode manual --gain 25.0 --output station2/ --config station2.yaml
+# Creates: station2/argus-SOUTH001_timestamp.dat
 
-# Station 3 (different location, different device)
-./argus-collector -D EAST0001 --frequency 433.92e6 --output station3/ --config station3.yaml
+# Station 3 (different location, different device, same gain)
+./argus-collector -D EAST0001 --frequency 433.92e6 --gain-mode manual --gain 25.0 --output station3/ --config station3.yaml
+# Creates: station3/argus-EAST0001_timestamp.dat
 
-# Or using manual GPS mode with device selection
-./argus-collector -D 0 --frequency 433.92e6 --gps-mode manual --latitude 35.533 --longitude -97.621 --output station1/
-./argus-collector -D 1 --frequency 433.92e6 --gps-mode manual --latitude 35.534 --longitude -97.622 --output station2/
-./argus-collector -D 2 --frequency 433.92e6 --gps-mode manual --latitude 35.535 --longitude -97.623 --output station3/
+# Or using manual GPS mode with device selection and consistent gain settings
+./argus-collector -D 0 --frequency 433.92e6 --gain-mode manual --gain 25.0 --gps-mode manual --latitude 35.533 --longitude -97.621 --output station1/
+./argus-collector -D 1 --frequency 433.92e6 --gain-mode manual --gain 25.0 --gps-mode manual --latitude 35.534 --longitude -97.622 --output station2/
+./argus-collector -D 2 --frequency 433.92e6 --gain-mode manual --gain 25.0 --gps-mode manual --latitude 35.535 --longitude -97.623 --output station3/
 ```
 
 ## Data Analysis Tools
 
 ### Argus Reader Utility
 
-The `argus-reader` is a specialized analysis tool for examining Argus Collector data files. It provides instant metadata inspection and comprehensive signal analysis capabilities without requiring external software.
+The `argus-reader` is a specialized analysis tool for examining Argus Collector data files. It provides instant metadata inspection, comprehensive signal analysis capabilities, and detailed device configuration analysis without requiring external software.
 
 **Key Features:**
 - **⚡ Ultra-fast metadata display** (< 1ms) - instantly verify collection parameters
+- **🔧 Device configuration analysis** - detailed gain control and bias tee analysis with recommendations
 - **📊 IQ sample analysis** - examine raw signal data with magnitude and phase
 - **📈 Statistical analysis** - calculate power, variance, and signal characteristics  
+- **📉 ASCII signal graphing** - visualize signal magnitude over time
+- **🔍 Hexadecimal data dump** - raw byte-level inspection of sample data
 - **🗂️ File format validation** - verify data integrity and format compliance
 - **💾 Memory efficient** - handles large files (1GB+) through smart sampling
 - **🔍 GPS data inspection** - validate positioning and timing accuracy
 
-The utility displays the contents of collected data files:
+#### Basic Usage
 
 ```bash
 # Build the reader tool
 make build-reader
 
-# Display file metadata and sample information
-./argus-reader data/argus_1234567890.dat
+# Display file metadata and device configuration
+./argus-reader data/argus-0_1753824114.dat
+
+# Show detailed device configuration analysis
+./argus-reader --device-analysis data/argus-0_1753824114.dat
 
 # Show IQ sample data (first 10 samples)
-./argus-reader --samples data/argus_1234567890.dat
+./argus-reader --samples data/argus-0_1753824114.dat
 
 # Show detailed statistics
-./argus-reader --stats data/argus_1234567890.dat
+./argus-reader --stats data/argus-0_1753824114.dat
 
-# Show more samples with statistics
-./argus-reader --samples --limit 20 --stats data/argus_1234567890.dat
+# Generate ASCII signal graph
+./argus-reader --graph data/argus-0_1753824114.dat
+
+# Show raw hexadecimal dump
+./argus-reader --hex --hex-limit 512 data/argus-0_1753824114.dat
+
+# Comprehensive analysis
+./argus-reader --device-analysis --samples --limit 20 --stats --graph data/argus-0_1753824114.dat
+```
+
+#### Device Configuration Analysis
+
+The `--device-analysis` flag provides detailed insights into RTL-SDR configuration and recommendations:
+
+```bash
+# Analyze gain control settings
+./argus-reader --device-analysis data/argus-NORTH001_1753824525.dat
+```
+
+**Example Device Analysis Output:**
+```
+🔧 Device Configuration Analysis:
+┌─────────────────────────┬─────────────────────────────────────────┐
+│ Analysis                │ Information                             │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ Gain Control            │ Manual gain control - fixed gain setting │
+│ Gain Impact             │ Higher values increase sensitivity      │
+│                         │ but may introduce noise                │
+│ Bias Tee Status         │ Powering external LNA via antenna port  │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ Recommendations         │                                         │
+│                         │ • Manual gain provides consistency     │
+│                         │ • Monitor for clipping or noise        │
+│                         │ • Bias tee active - check LNA power    │
+└─────────────────────────┴─────────────────────────────────────────┘
+
+📊 RTL-SDR Gain Reference:
+┌─────────────────────────┬─────────────────────────────────────────┐
+│ Gain Level              │ Typical Use Case                        │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ 0.0 - 10.0 dB          │ Strong signals, prevent overload        │
+│ 10.0 - 30.0 dB         │ Medium signals, general purpose         │
+│ 30.0 - 50.0 dB         │ Weak signals, maximum sensitivity       │
+│ AUTO (AGC)             │ Automatic adjustment based on signal    │
+└─────────────────────────┴─────────────────────────────────────────┘
+```
+
+#### Advanced Analysis Examples
+
+```bash
+# Compare gain settings across multiple stations
+./argus-reader --device-analysis data/argus-NORTH001_*.dat
+./argus-reader --device-analysis data/argus-SOUTH001_*.dat
+./argus-reader --device-analysis data/argus-EAST0001_*.dat
+
+# Verify TDOA setup consistency
+for station in NORTH001 SOUTH001 EAST0001; do
+    echo "=== Station: $station ==="
+    ./argus-reader --device-analysis data/argus-${station}_*.dat | grep -A5 "Device Configuration"
+done
+
+# Signal quality assessment
+./argus-reader --stats --graph --graph-samples 5000 data/argus-0_*.dat
+
+# Multi-format analysis for debugging
+./argus-reader --samples --hex --stats --device-analysis data/argus-0_*.dat
 ```
 
 **Performance Characteristics:**

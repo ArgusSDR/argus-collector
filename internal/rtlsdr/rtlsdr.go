@@ -18,13 +18,14 @@ type Device struct {
 	frequency  uint32          // Current tuned frequency in Hz
 	sampleRate uint32          // Current sample rate in Hz
 	gain       int             // Current gain in tenths of dB
+	gainMode   string          // Current gain mode: "auto" or "manual"
 	biasTee    bool            // Bias tee enabled state
 }
 
 // IQSample represents a collected set of IQ samples with timestamp
 type IQSample struct {
-	Timestamp time.Time    // Time when collection started
-	Data      []complex64  // IQ sample data (I=real, Q=imaginary)
+	Timestamp time.Time   // Time when collection started
+	Data      []complex64 // IQ sample data (I=real, Q=imaginary)
 }
 
 // NewDevice creates a new RTL-SDR device instance
@@ -35,7 +36,7 @@ func NewDevice(deviceIndex int) (*Device, error) {
 	if count == 0 {
 		return nil, fmt.Errorf("no RTL-SDR devices found")
 	}
-	
+
 	// Validate device index is within range
 	if deviceIndex >= count {
 		return nil, fmt.Errorf("device index %d out of range (found %d devices)", deviceIndex, count)
@@ -58,7 +59,7 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 	if count == 0 {
 		return nil, fmt.Errorf("no RTL-SDR devices found")
 	}
-	
+
 	// Search for device with matching serial number
 	for i := 0; i < count; i++ {
 		// Get device USB strings (manufacturer, product, serial)
@@ -66,7 +67,7 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 		if err != nil {
 			continue // Skip devices we can't query
 		}
-		
+
 		// Check if serial number matches
 		if serial == serialNumber {
 			// Open the matching device
@@ -77,7 +78,7 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 			return &Device{dev: dev}, nil
 		}
 	}
-	
+
 	return nil, fmt.Errorf("no RTL-SDR device found with serial number: %s", serialNumber)
 }
 
@@ -87,7 +88,7 @@ func ListDevices() ([]DeviceInfo, error) {
 	if count == 0 {
 		return nil, fmt.Errorf("no RTL-SDR devices found")
 	}
-	
+
 	devices := make([]DeviceInfo, 0, count)
 	for i := 0; i < count; i++ {
 		// Get device USB strings
@@ -99,12 +100,12 @@ func ListDevices() ([]DeviceInfo, error) {
 				Index:        i,
 				Name:         name,
 				Manufacturer: "Unknown",
-				Product:      "Unknown", 
+				Product:      "Unknown",
 				SerialNumber: "Unknown",
 			})
 			continue
 		}
-		
+
 		devices = append(devices, DeviceInfo{
 			Index:        i,
 			Name:         rtlsdr.GetDeviceName(i),
@@ -113,7 +114,7 @@ func ListDevices() ([]DeviceInfo, error) {
 			SerialNumber: serial,
 		})
 	}
-	
+
 	return devices, nil
 }
 
@@ -122,7 +123,7 @@ type DeviceInfo struct {
 	Index        int    // Device index (0-based)
 	Name         string // Device name
 	Manufacturer string // USB manufacturer string
-	Product      string // USB product string  
+	Product      string // USB product string
 	SerialNumber string // USB serial number string
 }
 
@@ -146,17 +147,17 @@ func (d *Device) SetSampleRate(rate uint32) error {
 		if fallbackErr != nil {
 			return fmt.Errorf("failed to set sample rate to %d Hz and no valid fallback found: %w", rate, err)
 		}
-		
+
 		// Try the valid rate
 		if err := d.dev.SetSampleRate(int(validRate)); err != nil {
 			return fmt.Errorf("failed to set sample rate to %d Hz (tried fallback %d Hz): %w", rate, validRate, err)
 		}
-		
+
 		fmt.Printf("Warning: Requested sample rate %d Hz not supported, using %d Hz instead\n", rate, validRate)
 		d.sampleRate = validRate
 		return nil
 	}
-	
+
 	d.sampleRate = rate
 	return nil
 }
@@ -165,22 +166,22 @@ func (d *Device) SetSampleRate(rate uint32) error {
 func (d *Device) findValidSampleRate(requestedRate uint32) (uint32, error) {
 	// Common RTL-SDR supported sample rates (in Hz)
 	validRates := []uint32{
-		250000,   // 250 kHz
-		1024000,  // 1.024 MHz  
-		1536000,  // 1.536 MHz
-		1792000,  // 1.792 MHz
-		1920000,  // 1.92 MHz
-		2048000,  // 2.048 MHz
-		2160000,  // 2.16 MHz
-		2560000,  // 2.56 MHz
-		2880000,  // 2.88 MHz
-		3200000,  // 3.2 MHz (maximum for most devices)
+		250000,  // 250 kHz
+		1024000, // 1.024 MHz
+		1536000, // 1.536 MHz
+		1792000, // 1.792 MHz
+		1920000, // 1.92 MHz
+		2048000, // 2.048 MHz
+		2160000, // 2.16 MHz
+		2560000, // 2.56 MHz
+		2880000, // 2.88 MHz
+		3200000, // 3.2 MHz (maximum for most devices)
 	}
-	
+
 	// Find the closest valid rate
 	var bestRate uint32
 	var minDiff uint32 = ^uint32(0) // Max uint32
-	
+
 	for _, rate := range validRates {
 		var diff uint32
 		if rate > requestedRate {
@@ -188,18 +189,41 @@ func (d *Device) findValidSampleRate(requestedRate uint32) (uint32, error) {
 		} else {
 			diff = requestedRate - rate
 		}
-		
+
 		if diff < minDiff {
 			minDiff = diff
 			bestRate = rate
 		}
 	}
-	
+
 	if bestRate == 0 {
 		return 0, fmt.Errorf("no valid sample rate found")
 	}
-	
+
 	return bestRate, nil
+}
+
+// GetTunerGains returns the list of supported tuner gains in tenths of dB
+func (d *Device) GetTunerGains() ([]int, error) {
+	gains, err := d.dev.GetTunerGains()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tuner gains: %w", err)
+	}
+	return gains, nil
+}
+
+// GetTunerGainsFloat returns the list of supported tuner gains in dB as floats
+func (d *Device) GetTunerGainsFloat() ([]float64, error) {
+	gains, err := d.GetTunerGains()
+	if err != nil {
+		return nil, err
+	}
+
+	gainsFloat := make([]float64, len(gains))
+	for i, gain := range gains {
+		gainsFloat[i] = float64(gain) / 10.0
+	}
+	return gainsFloat, nil
 }
 
 // SetGain sets the tuner gain of the RTL-SDR device
@@ -211,17 +235,50 @@ func (d *Device) SetGain(gain float64) error {
 		return fmt.Errorf("failed to set gain to %.1f dB: %w", gain, err)
 	}
 	d.gain = gainTenthsDB
+	d.gainMode = "manual"
+	return nil
+}
+
+// SetGainMode sets the gain control mode
+// mode: "auto" for AGC, "manual" for manual gain control
+func (d *Device) SetGainMode(mode string) error {
+	switch mode {
+	case "auto":
+		// Enable AGC
+		if err := d.dev.SetTunerGainMode(false); err != nil {
+			return fmt.Errorf("failed to enable AGC: %w", err)
+		}
+		d.gainMode = "auto"
+	case "manual":
+		// Disable AGC (enable manual gain control)
+		if err := d.dev.SetTunerGainMode(true); err != nil {
+			return fmt.Errorf("failed to enable manual gain control: %w", err)
+		}
+		d.gainMode = "manual"
+	default:
+		return fmt.Errorf("invalid gain mode: %s (must be 'auto' or 'manual')", mode)
+	}
 	return nil
 }
 
 // EnableAGC enables or disables automatic gain control
 // enable: true to enable AGC, false to use manual gain
+// Deprecated: Use SetGainMode instead
 func (d *Device) EnableAGC(enable bool) error {
-	// Note: SetTunerGainMode expects false for AGC enabled
-	if err := d.dev.SetTunerGainMode(!enable); err != nil {
-		return fmt.Errorf("failed to set AGC mode: %w", err)
+	if enable {
+		return d.SetGainMode("auto")
 	}
-	return nil
+	return d.SetGainMode("manual")
+}
+
+// GetGain returns the current gain in dB
+func (d *Device) GetGain() float64 {
+	return float64(d.gain) / 10.0
+}
+
+// GetGainMode returns the current gain mode
+func (d *Device) GetGainMode() string {
+	return d.gainMode
 }
 
 // SetBiasTee enables or disables the bias tee for powering external LNAs
@@ -247,8 +304,11 @@ func (d *Device) GetDeviceInfo() (string, error) {
 	if d.biasTee {
 		biasStatus = "on"
 	}
-	return fmt.Sprintf("%s (freq: %d Hz, rate: %d Hz, gain: %.1f dB, bias-tee: %s)", 
-		name, d.frequency, d.sampleRate, float64(d.gain)/10, biasStatus), nil
+
+	gainInfo := fmt.Sprintf("%.1f dB (%s)", float64(d.gain)/10, d.gainMode)
+
+	return fmt.Sprintf("%s (freq: %d Hz, rate: %d Hz, gain: %s, bias-tee: %s)",
+		name, d.frequency, d.sampleRate, gainInfo, biasStatus), nil
 }
 
 // StartCollection collects IQ samples from RTL-SDR for specified duration
@@ -273,10 +333,10 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 	// Pre-allocate slice for all samples
 	allSamples := make([]complex64, 0, totalSamples)
 	buffer := make([]uint8, chunkSize)
-	
+
 	startTime := time.Now()
 	totalRead := 0
-	
+
 	// Read samples in chunks to manage memory usage
 	for totalRead < totalSamples*2 {
 		// Check if context has been cancelled (timeout reached)
@@ -286,20 +346,20 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 			break
 		default:
 		}
-		
+
 		remaining := totalSamples*2 - totalRead
 		readSize := chunkSize
 		if readSize > remaining {
 			readSize = remaining
 		}
-		
+
 		// Read raw IQ data from RTL-SDR with timeout protection
 		// Note: ReadSync is blocking, but we check context between calls
 		nRead, err := d.dev.ReadSync(buffer[:readSize], readSize)
 		if err != nil {
 			return fmt.Errorf("failed to read samples: %w", err)
 		}
-		
+
 		if nRead == 0 {
 			break
 		}
@@ -314,7 +374,7 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 				allSamples = append(allSamples, complex(i_val, q_val))
 			}
 		}
-		
+
 		totalRead += nRead
 	}
 

@@ -15,13 +15,14 @@ type Device struct {
 	frequency  uint32 // Stored frequency setting
 	sampleRate uint32 // Stored sample rate setting
 	gain       int    // Stored gain setting
+	gainMode   string // Stored gain mode setting
 	biasTee    bool   // Stored bias tee setting
 }
 
 // IQSample represents a stub IQ sample structure (matches real implementation)
 type IQSample struct {
-	Timestamp time.Time    // Time when collection would have started
-	Data      []complex64  // Empty sample data
+	Timestamp time.Time   // Time when collection would have started
+	Data      []complex64 // Empty sample data
 }
 
 // NewDevice creates a stub RTL-SDR device for testing
@@ -29,7 +30,8 @@ func NewDevice(deviceIndex int) (*Device, error) {
 	return &Device{
 		frequency:  433920000, // Default frequency
 		sampleRate: 2048000,   // Default sample rate
-		gain:       20,        // Default gain
+		gain:       207,       // Default gain (20.7 dB in tenths)
+		gainMode:   "manual",  // Default to manual gain
 		biasTee:    false,     // Default bias tee off
 	}, nil
 }
@@ -39,7 +41,8 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 	return &Device{
 		frequency:  433920000, // Default frequency
 		sampleRate: 2048000,   // Default sample rate
-		gain:       20,        // Default gain
+		gain:       207,       // Default gain (20.7 dB in tenths)
+		gainMode:   "manual",  // Default to manual gain
 		biasTee:    false,     // Default bias tee off
 	}, nil
 }
@@ -56,7 +59,7 @@ func ListDevices() ([]DeviceInfo, error) {
 		},
 		{
 			Index:        1,
-			Name:         "RTL-SDR Stub Device #1", 
+			Name:         "RTL-SDR Stub Device #1",
 			Manufacturer: "Stub Corp",
 			Product:      "RTL-SDR Stub",
 			SerialNumber: "00000002",
@@ -69,7 +72,7 @@ type DeviceInfo struct {
 	Index        int    // Device index (0-based)
 	Name         string // Device name
 	Manufacturer string // USB manufacturer string
-	Product      string // USB product string  
+	Product      string // USB product string
 	SerialNumber string // USB serial number string
 }
 
@@ -86,7 +89,7 @@ func (d *Device) SetSampleRate(rate uint32) error {
 		250000, 1024000, 1536000, 1792000, 1920000,
 		2048000, 2160000, 2560000, 2880000, 3200000,
 	}
-	
+
 	// Check if requested rate is valid
 	isValid := false
 	for _, validRate := range validRates {
@@ -95,7 +98,7 @@ func (d *Device) SetSampleRate(rate uint32) error {
 			break
 		}
 	}
-	
+
 	if !isValid {
 		// Find closest valid rate
 		bestRate, err := d.findValidSampleRate(rate)
@@ -107,7 +110,7 @@ func (d *Device) SetSampleRate(rate uint32) error {
 	} else {
 		d.sampleRate = rate
 	}
-	
+
 	return nil
 }
 
@@ -117,10 +120,10 @@ func (d *Device) findValidSampleRate(requestedRate uint32) (uint32, error) {
 		250000, 1024000, 1536000, 1792000, 1920000,
 		2048000, 2160000, 2560000, 2880000, 3200000,
 	}
-	
+
 	var bestRate uint32
 	var minDiff uint32 = ^uint32(0)
-	
+
 	for _, rate := range validRates {
 		var diff uint32
 		if rate > requestedRate {
@@ -128,29 +131,75 @@ func (d *Device) findValidSampleRate(requestedRate uint32) (uint32, error) {
 		} else {
 			diff = requestedRate - rate
 		}
-		
+
 		if diff < minDiff {
 			minDiff = diff
 			bestRate = rate
 		}
 	}
-	
+
 	if bestRate == 0 {
 		return 0, fmt.Errorf("no valid sample rate found")
 	}
-	
+
 	return bestRate, nil
+}
+
+// GetTunerGains stub method - returns typical RTL-SDR gains in tenths of dB
+func (d *Device) GetTunerGains() ([]int, error) {
+	// Typical RTL-SDR gains in tenths of dB
+	return []int{0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328, 338, 364, 372, 386, 402, 421, 434, 439, 445, 480, 496}, nil
+}
+
+// GetTunerGainsFloat stub method - returns typical RTL-SDR gains in dB as floats
+func (d *Device) GetTunerGainsFloat() ([]float64, error) {
+	gains, err := d.GetTunerGains()
+	if err != nil {
+		return nil, err
+	}
+
+	gainsFloat := make([]float64, len(gains))
+	for i, gain := range gains {
+		gainsFloat[i] = float64(gain) / 10.0
+	}
+	return gainsFloat, nil
 }
 
 // SetGain stub method - stores gain setting
 func (d *Device) SetGain(gain float64) error {
 	d.gain = int(gain * 10) // Store in tenths of dB
+	d.gainMode = "manual"
 	return nil
 }
 
-// EnableAGC stub method - no-op for stub implementation
+// SetGainMode stub method - stores gain mode setting
+func (d *Device) SetGainMode(mode string) error {
+	switch mode {
+	case "auto", "manual":
+		d.gainMode = mode
+		return nil
+	default:
+		return fmt.Errorf("invalid gain mode: %s (must be 'auto' or 'manual')", mode)
+	}
+}
+
+// EnableAGC stub method - compatibility wrapper
+// Deprecated: Use SetGainMode instead
 func (d *Device) EnableAGC(enable bool) error {
-	return nil
+	if enable {
+		return d.SetGainMode("auto")
+	}
+	return d.SetGainMode("manual")
+}
+
+// GetGain stub method - returns current gain in dB
+func (d *Device) GetGain() float64 {
+	return float64(d.gain) / 10.0
+}
+
+// GetGainMode stub method - returns current gain mode
+func (d *Device) GetGainMode() string {
+	return d.gainMode
 }
 
 // SetBiasTee stub method - stores bias tee setting
@@ -165,8 +214,11 @@ func (d *Device) GetDeviceInfo() (string, error) {
 	if d.biasTee {
 		biasStatus = "on"
 	}
-	return fmt.Sprintf("RTL-SDR Stub Device (freq: %d Hz, rate: %d Hz, gain: %.1f dB, bias-tee: %s)", 
-		d.frequency, d.sampleRate, float64(d.gain)/10, biasStatus), nil
+
+	gainInfo := fmt.Sprintf("%.1f dB (%s)", float64(d.gain)/10, d.gainMode)
+
+	return fmt.Sprintf("RTL-SDR Stub Device (freq: %d Hz, rate: %d Hz, gain: %s, bias-tee: %s)",
+		d.frequency, d.sampleRate, gainInfo, biasStatus), nil
 }
 
 // StartCollection stub method - simulates collection for testing with proper timeout handling
@@ -174,18 +226,18 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
-	
+
 	startTime := time.Now()
-	
-	// Generate fake sample data for testing  
+
+	// Generate fake sample data for testing
 	totalSamples := int(d.sampleRate * uint32(duration.Seconds()))
 	fakeSamples := make([]complex64, totalSamples)
-	
+
 	// Fill with simple test pattern
 	for i := range fakeSamples {
 		fakeSamples[i] = complex(0.1, 0.1) // Simple test signal
 	}
-	
+
 	// Wait for the requested duration or until cancelled
 	select {
 	case <-ctx.Done():
@@ -194,7 +246,7 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 		// Safety timeout in case context doesn't work
 		return fmt.Errorf("stub collection timeout exceeded")
 	}
-	
+
 	// Send the fake samples
 	select {
 	case samplesChan <- IQSample{

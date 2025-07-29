@@ -253,7 +253,7 @@ func ReadMetadata(filename string) (*Metadata, uint32, error) {
 	}
 
 	var metadata Metadata
-	
+
 	// Read metadata fields in order
 	if err := binary.Read(file, binary.LittleEndian, &metadata.FileFormatVersion); err != nil {
 		return nil, 0, err

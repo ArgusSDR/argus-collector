@@ -6,8 +6,10 @@ A utility for analyzing and displaying the contents of Argus Collector data file
 
 Argus Reader allows you to:
 - **Instantly view file metadata** (frequency, GPS location, timestamps)
+- **Analyze device configuration** (gain control, bias tee settings, recommendations)
 - **Analyze IQ sample data** (magnitude, phase, statistics)
 - **Visualize signal patterns** (ASCII graphs of magnitude over time)
+- **Inspect raw data** (hexadecimal dumps of sample bytes)
 - **Verify collection parameters** (sample rate, duration, device info)
 - **Debug data collection issues** (GPS fix quality, timing accuracy)
 
@@ -40,6 +42,7 @@ go build -o argus-reader ./cmd/argus-reader
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
+| `--device-analysis` | | `false` | Show detailed device configuration analysis |
 | `--samples` | `-s` | `false` | Display IQ sample data |
 | `--limit` | `-l` | `10` | Number of samples to display |
 | `--stats` | | `false` | Show statistical analysis |
@@ -58,7 +61,7 @@ go build -o argus-reader ./cmd/argus-reader
 
 ```bash
 # Fast metadata display (< 1ms)
-./argus-reader data/argus_1234567890.dat
+./argus-reader data/argus-NORTH001_1753824525.dat
 ```
 
 **Output:**
@@ -68,7 +71,7 @@ go build -o argus-reader ./cmd/argus-reader
 ╚══════════════════════════════════════════════════════════════╝
 
 📁 File Information:
-   Name: argus_1234567890.dat
+   Name: argus-NORTH001_1753824525.dat
    Size: 934.00 MB (979,370,089 bytes)
    Modified: 2025-07-13 10:53:15
 
@@ -77,8 +80,7 @@ go build -o argus-reader ./cmd/argus-reader
 │ Parameter               │ Value                                   │
 ├─────────────────────────┼─────────────────────────────────────────┤
 │ File Format Version     │ 1                                       │
-│ Collection ID           │ argus_1234567890                        │
-│ Device Info             │ RTL-SDR Device 0                        │
+│ Collection ID           │ argus-NORTH001_1753824525               │
 ├─────────────────────────┼─────────────────────────────────────────┤
 │ Frequency               │ 433.920 MHz                            │
 │ Sample Rate             │ 2.048 MSps                             │
@@ -91,6 +93,16 @@ go build -o argus-reader ./cmd/argus-reader
 │ GPS Altitude            │ 399.60 m                              │
 └─────────────────────────┴─────────────────────────────────────────┘
 
+📻 Device Configuration:
+┌─────────────────────────┬─────────────────────────────────────────┐
+│ Parameter               │ Value                                   │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ Device Name             │ RTL-SDR Device NORTH001                 │
+│ Gain Setting            │ 25.0 dB                                 │
+│ Gain Mode               │ manual                                  │
+│ Bias Tee               │ off                                     │
+└─────────────────────────┴─────────────────────────────────────────┘
+
 📡 Sample Information:
 ┌─────────────────────────┬─────────────────────────────────────────┐
 │ Parameter               │ Value                                   │
@@ -99,6 +111,40 @@ go build -o argus-reader ./cmd/argus-reader
 │ Sample Type             │ Complex64 (32-bit I + 32-bit Q)        │
 │ Data Size               │ 934.00 MB                              │
 │ Collection Duration     │ 59.776 seconds                         │
+└─────────────────────────┴─────────────────────────────────────────┘
+```
+
+### Device Configuration Analysis
+
+```bash
+# Detailed device configuration analysis with recommendations
+./argus-reader --device-analysis data/argus-NORTH001_1753824525.dat
+```
+
+**Device Analysis Output:**
+```
+🔧 Device Configuration Analysis:
+┌─────────────────────────┬─────────────────────────────────────────┐
+│ Analysis                │ Information                             │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ Gain Control            │ Manual gain control - fixed gain setting │
+│ Gain Impact             │ Higher values increase sensitivity      │
+│                         │ but may introduce noise                │
+│ Bias Tee Status         │ No power supplied to antenna port       │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ Recommendations         │                                         │
+│                         │ • Manual gain provides consistency     │
+│                         │ • Monitor for clipping or noise        │
+└─────────────────────────┴─────────────────────────────────────────┘
+
+📊 RTL-SDR Gain Reference:
+┌─────────────────────────┬─────────────────────────────────────────┐
+│ Gain Level              │ Typical Use Case                        │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ 0.0 - 10.0 dB          │ Strong signals, prevent overload        │
+│ 10.0 - 30.0 dB         │ Medium signals, general purpose         │
+│ 30.0 - 50.0 dB         │ Weak signals, maximum sensitivity       │
+│ AUTO (AGC)             │ Automatic adjustment based on signal    │
 └─────────────────────────┴─────────────────────────────────────────┘
 ```
 
@@ -272,18 +318,44 @@ Analyze signal characteristics and noise levels:
 
 ### 5. TDOA Preparation
 
-Verify synchronization across multiple stations:
+Verify synchronization and gain consistency across multiple stations:
 
 ```bash
 # Check collection timing across stations
-./argus-reader station1/argus_1234567890.dat | grep "Collection Time"
-./argus-reader station2/argus_1234567890.dat | grep "Collection Time"
-./argus-reader station3/argus_1234567890.dat | grep "Collection Time"
+./argus-reader station1/argus-NORTH001_1753824525.dat | grep "Collection Time"
+./argus-reader station2/argus-SOUTH001_1753824525.dat | grep "Collection Time"  
+./argus-reader station3/argus-EAST0001_1753824525.dat | grep "Collection Time"
+
+# Verify gain settings are consistent across all stations
+./argus-reader --device-analysis station1/argus-NORTH001_*.dat | grep "Gain"
+./argus-reader --device-analysis station2/argus-SOUTH001_*.dat | grep "Gain"
+./argus-reader --device-analysis station3/argus-EAST0001_*.dat | grep "Gain"
 
 # Visual comparison of signal patterns across stations
-./argus-reader -g station1/synchronized_collection.dat
-./argus-reader -g station2/synchronized_collection.dat
-./argus-reader -g station3/synchronized_collection.dat
+./argus-reader -g station1/argus-NORTH001_1753824525.dat
+./argus-reader -g station2/argus-SOUTH001_1753824525.dat
+./argus-reader -g station3/argus-EAST0001_1753824525.dat
+```
+
+### 6. Multi-Station Gain Verification
+
+Ensure consistent gain settings across TDOA stations:
+
+```bash
+# Quick gain consistency check across all stations
+for station in NORTH001 SOUTH001 EAST0001; do
+    echo "=== Station: $station ==="
+    ./argus-reader --device-analysis data/argus-${station}_*.dat | grep -E "(Gain Setting|Gain Mode)"
+done
+
+# Detailed device configuration comparison
+./argus-reader --device-analysis data/argus-NORTH001_*.dat > north_config.txt
+./argus-reader --device-analysis data/argus-SOUTH001_*.dat > south_config.txt
+./argus-reader --device-analysis data/argus-EAST0001_*.dat > east_config.txt
+
+# Compare configurations (should be identical for TDOA)
+diff north_config.txt south_config.txt
+diff north_config.txt east_config.txt
 ```
 
 ## File Format Information

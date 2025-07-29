@@ -9,17 +9,17 @@ import (
 // Build-time variables that can be set via ldflags
 var (
 	// Version is the main version number that is being run at the moment
-	Version = "0.1.0"
-	
+	Version = "0.02"
+
 	// GitCommit is the git sha1 that was compiled. This will be filled in by the compiler
 	GitCommit = "unknown"
-	
+
 	// GitBranch is the git branch that was compiled. This will be filled in by the compiler
 	GitBranch = "unknown"
-	
+
 	// BuildDate is the date the binary was built
 	BuildDate = "unknown"
-	
+
 	// BuildUser is the user who built the binary
 	BuildUser = "unknown"
 )
@@ -64,9 +64,9 @@ func GetFullVersion() string {
 // GetVersionInfo returns formatted version information
 func GetVersionInfo(appName string) string {
 	info := GetBuildInfo()
-	
+
 	result := fmt.Sprintf("%s version %s", appName, info.Version)
-	
+
 	if info.GitCommit != "unknown" {
 		if len(info.GitCommit) > 7 {
 			result += fmt.Sprintf(" (commit %s)", info.GitCommit[:7])
@@ -74,21 +74,21 @@ func GetVersionInfo(appName string) string {
 			result += fmt.Sprintf(" (commit %s)", info.GitCommit)
 		}
 	}
-	
+
 	if info.GitBranch != "unknown" {
 		result += fmt.Sprintf(" on branch %s", info.GitBranch)
 	}
-	
+
 	if info.BuildDate != "unknown" {
 		result += fmt.Sprintf("\nBuilt: %s", info.BuildDate)
 	}
-	
+
 	if info.BuildUser != "unknown" {
 		result += fmt.Sprintf(" by %s", info.BuildUser)
 	}
-	
+
 	result += fmt.Sprintf("\nGo: %s", info.GoVersion)
 	result += fmt.Sprintf("\nPlatform: %s", info.Platform)
-	
+
 	return result
 }
