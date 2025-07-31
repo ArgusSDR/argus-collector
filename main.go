@@ -313,10 +313,6 @@ func runCollector(cmd *cobra.Command) error {
 
 	// Display startup information
 	fmt.Printf("Argus Collector %s starting...\n", version.GetFullVersion())
-	fmt.Printf("Frequency: %.2f MHz\n", cfg.RTLSDR.Frequency/1e6)
-	fmt.Printf("Duration: %v\n", cfg.Collection.Duration)
-	fmt.Printf("Output: %s\n", cfg.Collection.OutputDir)
-	fmt.Printf("Synchronized Start: %t\n", cfg.Collection.SyncedStart)
 
 	switch cfg.GPS.Mode {
 	case "manual":

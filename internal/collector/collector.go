@@ -207,13 +207,9 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 
 	collectionID := fmt.Sprintf("%s-%s_%d", c.config.Collection.FilePrefix, deviceID, startTime.Unix())
 
-	fmt.Printf("Starting collection (ID: %s)\n", collectionID)
-	fmt.Printf("Duration: %v\n", c.config.Collection.Duration)
+	fmt.Printf("Starting collection (ID: %s, Duration: %v)\n", collectionID, c.config.Collection.Duration)
 	// Calculate timeout buffer: 3.2x the collection duration
 	totalTimeout := time.Duration(float64(c.config.Collection.Duration) * 3.2)
-
-	fmt.Printf("Collection timeouts: RTL-SDR data expected within %v, maximum wait time %v\n",
-		c.config.Collection.Duration+10*time.Second, totalTimeout)
 
 	deviceInfo, err := c.rtlsdr.GetDeviceInfo()
 	if err != nil {
