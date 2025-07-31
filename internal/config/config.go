@@ -66,7 +66,7 @@ func DefaultConfig() *Config {
 		},
 		GPS: GPSConfig{
 			Mode:            "nmea",           // Default to NMEA serial mode
-			Port:            "/dev/ttyUSB0",   // Common USB GPS device path
+			Port:            "/dev/ttyACM0",   // Common USB GPS device path
 			BaudRate:        9600,             // Standard NMEA baud rate
 			GPSDHost:        "localhost",      // Default gpsd host
 			GPSDPort:        "2947",           // Default gpsd port

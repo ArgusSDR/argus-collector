@@ -34,7 +34,6 @@ var (
 	gpsdPort    string  // GPSD port (for gpsd mode)
 	verbose     bool    // Enable verbose logging
 	syncedStart bool    // Enable synchronized start timing
-	disableGPS  bool    // Disable GPS hardware and use manual coordinates (deprecated)
 	latitude    float64 // Manual latitude in decimal degrees
 	longitude   float64 // Manual longitude in decimal degrees
 	altitude    float64 // Manual altitude in meters
@@ -98,7 +97,7 @@ func init() {
 
 	// GPS configuration options
 	rootCmd.Flags().StringVar(&gpsMode, "gps-mode", "nmea", "GPS mode: nmea, gpsd, or manual")
-	rootCmd.Flags().StringVarP(&gpsPort, "gps-port", "p", "/dev/ttyUSB0", "GPS serial port (for NMEA mode)")
+	rootCmd.Flags().StringVarP(&gpsPort, "gps-port", "p", "/dev/ttyACM0", "GPS serial port (for NMEA mode)")
 	rootCmd.Flags().StringVar(&gpsdHost, "gpsd-host", "localhost", "GPSD host address (for gpsd mode)")
 	rootCmd.Flags().StringVar(&gpsdPort, "gpsd-port", "2947", "GPSD port (for gpsd mode)")
 
@@ -106,9 +105,6 @@ func init() {
 	rootCmd.Flags().Float64Var(&latitude, "latitude", 0.0, "manual latitude in decimal degrees (for manual mode)")
 	rootCmd.Flags().Float64Var(&longitude, "longitude", 0.0, "manual longitude in decimal degrees (for manual mode)")
 	rootCmd.Flags().Float64Var(&altitude, "altitude", 0.0, "manual altitude in meters (for manual mode)")
-
-	// Deprecated GPS options (for backward compatibility)
-	rootCmd.Flags().BoolVar(&disableGPS, "disable-gps", false, "disable GPS hardware and use manual coordinates (deprecated: use --gps-mode=manual)")
 
 	// RTL-SDR device selection and gain control
 	rootCmd.Flags().StringVarP(&device, "device", "D", "", "RTL-SDR device selection (serial number or index)")
@@ -247,15 +243,7 @@ func runCollector(cmd *cobra.Command) error {
 		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
 	}
 
-	// Handle GPS mode configuration and backward compatibility
-	if disableGPS {
-		// Backward compatibility: --disable-gps flag overrides mode
-		cfg.GPS.Mode = "manual"
-		cfg.GPS.Disable = true // Keep for backward compatibility
-		cfg.GPS.ManualLatitude = latitude
-		cfg.GPS.ManualLongitude = longitude
-		cfg.GPS.ManualAltitude = altitude
-	} else if cmd.Flags().Changed("gps-mode") {
+	if cmd.Flags().Changed("gps-mode") {
 		// GPS mode explicitly specified via --gps-mode flag
 		cfg.GPS.Mode = gpsMode
 		if gpsMode == "manual" {
