@@ -1,0 +1,31 @@
+rtlsdr:
+  frequency: 433.92e6      # Target frequency in Hz
+  sample_rate: 2048000     # Sample rate in Hz
+  gain: 20.7               # RF gain in dB
+  device_index:            # RTL-SDR device index (used if serial_number is empty)
+  serial_number: ""        # RTL-SDR device serial number (preferred over device_index)
+  bias_tee: false          # Enable bias tee for powering external LNAs
+
+gps:
+  mode: "manual"             # GPS mode: "nmea", "gpsd", or "manual"  
+  port: "/dev/ttyACM0"     # GPS serial port (for NMEA mode)
+  baud_rate: 38400         # Serial communication speed (for NMEA mode) - u-blox often uses 38400
+  gpsd_host: "localhost"   # GPSD host address (for gpsd mode)
+  gpsd_port: "2947"        # GPSD port (for gpsd mode)
+  timeout: 30s             # GPS fix timeout
+  disable: false           # Disable GPS hardware and use manual coordinates (deprecated, use mode: "manual")
+  manual_latitude: 35.53313317 # Manual latitude in decimal degrees (for manual mode)
+  manual_longitude: -97.62130200 # Manual longitude in decimal degrees (for manual mode)
+  manual_altitude: 365.0     # Manual altitude in meters (for manual mode)
+
+
+
+collection:
+  duration: 60s            # Collection duration
+  output_dir: "./data"     # Output directory
+  file_prefix: "argus"     # File naming prefix
+  synced_start: false      # Enable synchronized start based on epoch time (can be overridden with --synced-start=false)
+
+logging:
+  level: "info"            # Log level (debug, info, warn, error)
+  file: "argus.log"        # Log file path

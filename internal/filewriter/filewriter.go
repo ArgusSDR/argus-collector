@@ -125,15 +125,13 @@ func (w *Writer) writeHeader(file *os.File, metadata Metadata, sampleCount uint3
 }
 
 func (w *Writer) writeSamples(file *os.File, samples []complex64) error {
-	for _, sample := range samples {
-		if err := binary.Write(file, binary.LittleEndian, real(sample)); err != nil {
-			return err
-		}
-		if err := binary.Write(file, binary.LittleEndian, imag(sample)); err != nil {
-			return err
-		}
+	// Convert complex64 samples to interleaved float32 array for efficient bulk write
+	floats := make([]float32, len(samples)*2)
+	for i, sample := range samples {
+		floats[i*2] = real(sample)   // I component
+		floats[i*2+1] = imag(sample) // Q component
 	}
-	return nil
+	return binary.Write(file, binary.LittleEndian, floats)
 }
 
 // ReadFile reads the complete file including all sample data

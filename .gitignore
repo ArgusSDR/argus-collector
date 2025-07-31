@@ -43,8 +43,9 @@ Thumbs.db
 *.temp
 /tmp/
 
+
 # Configuration overrides (keep default config.yaml)
-config-*.yaml
+config*.yaml
 local-config.yaml
 
 # Runtime files

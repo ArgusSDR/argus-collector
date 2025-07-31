@@ -5,7 +5,6 @@
 package rtlsdr
 
 import (
-	"context"
 	"fmt"
 	"time"
 )
@@ -223,10 +222,6 @@ func (d *Device) GetDeviceInfo() (string, error) {
 
 // StartCollection stub method - simulates collection for testing with proper timeout handling
 func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSample) error {
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), duration)
-	defer cancel()
-
 	startTime := time.Now()
 
 	// Generate fake sample data for testing
@@ -238,16 +233,11 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 		fakeSamples[i] = complex(0.1, 0.1) // Simple test signal
 	}
 
-	// Wait for the requested duration or until cancelled
-	select {
-	case <-ctx.Done():
-		// Duration expired - this is the normal case
-	case <-time.After(duration + time.Second):
-		// Safety timeout in case context doesn't work
-		return fmt.Errorf("stub collection timeout exceeded")
-	}
+	// Simulate the real hardware behavior: collect for the duration, then send data
+	// This matches how the real RTL-SDR works - it collects samples over time
+	time.Sleep(duration)
 
-	// Send the fake samples
+	// Send the fake samples after collection completes (like real hardware)
 	select {
 	case samplesChan <- IQSample{
 		Timestamp: startTime,

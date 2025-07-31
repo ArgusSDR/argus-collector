@@ -42,6 +42,12 @@ all: clean deps build
 .PHONY: build
 build:
 	$(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_NAME) .
+	$(GOBUILD) $(LDFLAGS) -o $(READER_NAME) ./cmd/argus-reader
+
+# Build the collector utility
+.PHONY: build-collector
+build-collector:
+	$(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_NAME) .
 
 # Build the reader utility
 .PHONY: build-reader
