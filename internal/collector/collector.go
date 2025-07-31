@@ -209,8 +209,11 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 
 	fmt.Printf("Starting collection (ID: %s)\n", collectionID)
 	fmt.Printf("Duration: %v\n", c.config.Collection.Duration)
+	// Calculate timeout buffer: 3.2x the collection duration
+	totalTimeout := time.Duration(float64(c.config.Collection.Duration) * 3.2)
+
 	fmt.Printf("Collection timeouts: RTL-SDR data expected within %v, maximum wait time %v\n",
-		c.config.Collection.Duration+10*time.Second, c.config.Collection.Duration+20*time.Second)
+		c.config.Collection.Duration+10*time.Second, totalTimeout)
 
 	deviceInfo, err := c.rtlsdr.GetDeviceInfo()
 	if err != nil {
@@ -290,12 +293,13 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 	}()
 
 	// Wait for either successful completion, timeout, or context cancellation
+	// Use the same timeout buffer calculation as above for display
 	select {
 	case err := <-done:
 		if err != nil {
 			return err
 		}
-	case <-time.After(c.config.Collection.Duration + 20*time.Second):
+	case <-time.After(totalTimeout):
 		return fmt.Errorf("collection timeout - exceeded maximum wait time")
 	case <-ctx.Done():
 		return fmt.Errorf("collection cancelled: %w", ctx.Err())

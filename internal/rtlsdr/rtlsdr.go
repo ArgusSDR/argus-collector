@@ -338,6 +338,11 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 	totalRead := 0
 
 	// Read samples in chunks to manage memory usage
+	zeroReadCount := 0
+	maxZeroReads := 3 // Allow up to 3 consecutive zero reads before giving up
+	maxReadInterval := 2 * time.Second // If ReadSync takes longer than 2 seconds, likely hung
+
+readLoop:
 	for totalRead < totalSamples*2 {
 		// Check if context has been cancelled (timeout reached)
 		select {
@@ -354,14 +359,57 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 		}
 
 		// Read raw IQ data from RTL-SDR with timeout protection
-		// Note: ReadSync is blocking, but we check context between calls
-		nRead, err := d.dev.ReadSync(buffer[:readSize], readSize)
+		// Use a goroutine with timeout since ReadSync can block indefinitely
+		type readResult struct {
+			nRead int
+			err   error
+		}
+		readChan := make(chan readResult, 1)
+
+		go func() {
+			nRead, err := d.dev.ReadSync(buffer[:readSize], readSize)
+			readChan <- readResult{nRead: nRead, err: err}
+		}()
+
+		var nRead int
+		var err error
+
+		select {
+		case result := <-readChan:
+			nRead = result.nRead
+			err = result.err
+		case <-time.After(maxReadInterval):
+			// ReadSync is taking too long - likely buffer overrun
+			fmt.Printf("Warning: RTL-SDR ReadSync timeout after %v (likely buffer overrun), collected %d/%d samples\n",
+				maxReadInterval, len(allSamples), totalSamples)
+			break readLoop // Exit loop to send collected samples
+		case <-ctx.Done():
+			// Collection duration expired
+			break readLoop // Exit loop to send collected samples
+		}
+
 		if err != nil {
 			return fmt.Errorf("failed to read samples: %w", err)
 		}
 
 		if nRead == 0 {
-			break
+			zeroReadCount++
+			if zeroReadCount >= maxZeroReads {
+				// RTL-SDR buffer likely overrun - exit gracefully with collected samples
+				fmt.Printf("Warning: RTL-SDR stopped providing data (likely buffer overrun), collected %d/%d samples\n",
+					len(allSamples), totalSamples)
+				break
+			}
+			continue
+		}
+
+		// Reset zero read counter on successful read
+		zeroReadCount = 0
+
+		// Report progress every 2 seconds worth of data
+		if len(allSamples) > 0 && len(allSamples)%(int(d.sampleRate)*2) == 0 {
+			fmt.Printf("Progress: collected %d/%d samples (%.1f seconds)\n",
+				len(allSamples), totalSamples, float64(len(allSamples))/float64(d.sampleRate))
 		}
 
 		// Convert raw bytes to complex64 samples
