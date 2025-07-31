@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -155,8 +156,9 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	// If a config file is found, read it in
-	if err := viper.ReadInConfig(); err == nil && verbose {
-		fmt.Fprintf(os.Stderr, "Using config file: %s\n", viper.ConfigFileUsed())
+	if err := viper.ReadInConfig(); err == nil {
+		configPath, _ := filepath.Abs(viper.ConfigFileUsed())
+		fmt.Printf("Reading configuration file: %s\n", configPath)
 	}
 }
 
