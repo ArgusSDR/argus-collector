@@ -273,8 +273,17 @@ func runCollector(cmd *cobra.Command) error {
 		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
 	}
 
-	// Parse duration string into time.Duration
-	durationParsed, err := time.ParseDuration(viper.GetString("collection.duration"))
+	// Parse duration string with proper precedence: CLI flag > config file > code default
+	var durationStr string
+	if cmd.Flags().Changed("duration") {
+		// Command line flag takes highest precedence
+		durationStr = duration
+	} else {
+		// Use config file value if available, otherwise fall back to code default
+		durationStr = viper.GetString("collection.duration")
+	}
+	
+	durationParsed, err := time.ParseDuration(durationStr)
 	if err != nil {
 		return fmt.Errorf("invalid duration format: %w", err)
 	}
