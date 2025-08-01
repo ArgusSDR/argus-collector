@@ -91,11 +91,38 @@ func NewNMEASerialWithDebug(portName string, baudRate int, debug bool) (*NMEASer
 		return nil, fmt.Errorf("failed to open GPS port %s: %w", portName, err)
 	}
 
-	return &NMEASerial{
+	nmea := &NMEASerial{
 		port:    port,
 		fixChan: make(chan Position, 10),
 		debug:   debug,
-	}, nil
+	}
+
+	// Try to configure u-blox GPS to output NMEA GGA messages if it's not already
+	nmea.configureUbloxNMEA()
+
+	return nmea, nil
+}
+
+// configureUbloxNMEA attempts to configure u-blox GPS to output NMEA GGA messages
+func (n *NMEASerial) configureUbloxNMEA() {
+	log.Printf("GPS: Attempting to configure u-blox GPS for NMEA output")
+
+	// Send u-blox UBX command to enable NMEA GGA messages on UART1
+	// UBX-CFG-MSG: Enable GGA messages (Class=0xF0, ID=0x00) on UART1 (port 1)
+	// Message format: 0xB5 0x62 0x06 0x01 0x08 0x00 0xF0 0x00 0x00 0x01 0x00 0x00 0x00 0x00 + checksum
+	ggaCmd := []byte{0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31}
+	
+	// Send u-blox UBX command to enable NMEA RMC messages on UART1  
+	// UBX-CFG-MSG: Enable RMC messages (Class=0xF0, ID=0x04) on UART1 (port 1)
+	rmcCmd := []byte{0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x05, 0x3B}
+
+	// Send the commands
+	n.port.Write(ggaCmd)
+	time.Sleep(100 * time.Millisecond)
+	n.port.Write(rmcCmd)
+	time.Sleep(100 * time.Millisecond)
+
+	log.Printf("GPS: Sent u-blox configuration commands to enable NMEA GGA/RMC output")
 }
 
 // NewGPSDClient creates a new gpsd client interface
@@ -152,13 +179,25 @@ func (n *NMEASerial) readLoop() {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if n.debug {
-			log.Printf("GPS: Received NMEA: %s", line)
+		// Only process lines that look like NMEA sentences (start with $ and contain only printable ASCII)
+		if len(line) == 0 || line[0] != '$' {
+			continue
+		}
+		
+		// Validate that line contains only printable ASCII to filter out binary data
+		isPrintable := true
+		for _, r := range line {
+			if r < 32 || r > 126 {
+				isPrintable = false
+				break
+			}
+		}
+		if !isPrintable {
+			continue
 		}
 
-		// Skip empty lines
-		if len(line) == 0 {
-			continue
+		if n.debug {
+			log.Printf("GPS: Received NMEA: %s", line)
 		}
 
 		sentence, err := nmea.Parse(line)
@@ -171,9 +210,24 @@ func (n *NMEASerial) readLoop() {
 
 		switch s := sentence.(type) {
 		case nmea.GGA:
+			if n.debug {
+				log.Printf("GPS: Processing GGA message")
+			}
 			n.processGGA(s)
 		case nmea.RMC:
+			if n.debug {
+				log.Printf("GPS: Processing RMC message")
+			}
 			n.processRMC(s)
+		case nmea.GLL, nmea.VTG, nmea.GSA, nmea.GSV:
+			// These are valid NMEA sentences but don't contain position fixes we need
+			if n.debug {
+				log.Printf("GPS: Received %T message (not needed for position)", s)
+			}
+		default:
+			if n.debug {
+				log.Printf("GPS: Received %T message (ignoring)", s)
+			}
 		}
 	}
 
@@ -294,7 +348,7 @@ func (n *NMEASerial) WaitForFix(timeout time.Duration) (*Position, error) {
 				return &pos, nil
 			}
 		case <-timer.C:
-			return nil, fmt.Errorf("GPS fix timeout after %v", timeout)
+			return nil, fmt.Errorf("GPS fix timeout after %v. GPS may be configured to output UBX binary protocol instead of NMEA position messages. Consider using --gps-mode=gpsd or configure GPS to output NMEA GGA/RMC messages", timeout)
 		}
 	}
 }

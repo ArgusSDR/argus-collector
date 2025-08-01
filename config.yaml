@@ -7,9 +7,9 @@ rtlsdr:
   bias_tee: false          # Enable bias tee for powering external LNAs
 
 gps:
-  mode: "gpsd"             # GPS mode: "nmea", "gpsd", or "manual"  
+  mode: "nmea"             # GPS mode: "nmea", "gpsd", or "manual"  
   port: "/dev/ttyACM0"     # GPS serial port (for NMEA mode)
-  baud_rate: 38400         # Serial communication speed (for NMEA mode) - u-blox often uses 38400
+  baud_rate: 9600          # Serial communication speed (for NMEA mode)
   gpsd_host: "localhost"   # GPSD host address (for gpsd mode)
   gpsd_port: "2947"        # GPSD port (for gpsd mode)
   timeout: 30s             # GPS fix timeout
