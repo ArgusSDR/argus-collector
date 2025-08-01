@@ -2,7 +2,7 @@ rtlsdr:
   frequency: 433.92e6      # Target frequency in Hz
   sample_rate: 2048000     # Sample rate in Hz
   gain: 20.7               # RF gain in dB
-  device_index:            # RTL-SDR device index (used if serial_number is empty)
+  device_index: 0          # RTL-SDR device index (used if serial_number is empty)
   serial_number: ""        # RTL-SDR device serial number (preferred over device_index)
   bias_tee: false          # Enable bias tee for powering external LNAs
 
