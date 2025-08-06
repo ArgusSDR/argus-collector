@@ -1,5 +1,6 @@
 rtlsdr:
-  frequency: 433.92e6      # Target frequency in Hz
+  frequency: 162400000     #  common NWS Weather Radio frequency
+			   # 162.400 MHz, 162.425 MHz, 162.450 MHz, 162.475 MHz, 162.500 MHz, 162.525 MHz, and 162.550 MHz.
   sample_rate: 2048000     # Sample rate in Hz
   gain: 20.7               # RF gain in dB
   device_index:            # RTL-SDR device index (used if serial_number is empty)
@@ -14,9 +15,9 @@ gps:
   gpsd_port: "2947"        # GPSD port (for gpsd mode)
   timeout: 30s             # GPS fix timeout
   disable: false           # Disable GPS hardware and use manual coordinates (deprecated, use mode: "manual")
-  manual_latitude: 35.53313317 # Manual latitude in decimal degrees (for manual mode)
-  manual_longitude: -97.62130200 # Manual longitude in decimal degrees (for manual mode)
-  manual_altitude: 365.0     # Manual altitude in meters (for manual mode)
+  manual_latitude: 35.500  # Manual latitude in decimal degrees (for manual mode)
+  manual_longitude: -97.600 # Manual longitude in decimal degrees (for manual mode)
+  manual_altitude: 365.0   # Manual altitude in meters (for manual mode)
 
 
 
