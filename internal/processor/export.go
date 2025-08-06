@@ -13,7 +13,7 @@ import (
 func (r *Result) ExportGeoJSON(filename string) error {
 	// Create GeoJSON structure
 	geojson := map[string]interface{}{
-		"type": "FeatureCollection",
+		"type":     "FeatureCollection",
 		"features": []map[string]interface{}{},
 		"properties": map[string]interface{}{
 			"title":           "TDOA Transmitter Location Analysis",
@@ -358,7 +358,7 @@ func (r *Result) ExportCSV(filename string) error {
 // generateCircleFeature creates a GeoJSON circle feature
 func generateCircleFeature(center Location, radius float64, featureType string) map[string]interface{} {
 	points := generateCirclePoints(center, radius, 64)
-	
+
 	coordinates := make([][]float64, len(points)+1) // +1 to close the polygon
 	for i, point := range points {
 		coordinates[i] = []float64{point.Longitude, point.Latitude}
@@ -383,20 +383,20 @@ func generateCircleFeature(center Location, radius float64, featureType string) 
 // generateCirclePoints generates points around a circle for a given center and radius
 func generateCirclePoints(center Location, radiusMeters float64, numPoints int) []Location {
 	points := make([]Location, numPoints)
-	
+
 	// Convert radius from meters to degrees (approximate)
 	latRadiusDeg := radiusMeters / 111000.0 // Approximate meters per degree latitude
-	lonRadiusDeg := radiusMeters / (111000.0 * math.Cos(center.Latitude * math.Pi / 180))
-	
+	lonRadiusDeg := radiusMeters / (111000.0 * math.Cos(center.Latitude*math.Pi/180))
+
 	for i := 0; i < numPoints; i++ {
 		angle := 2 * math.Pi * float64(i) / float64(numPoints)
-		
+
 		points[i] = Location{
-			Latitude:  center.Latitude + latRadiusDeg * math.Sin(angle),
-			Longitude: center.Longitude + lonRadiusDeg * math.Cos(angle),
+			Latitude:  center.Latitude + latRadiusDeg*math.Sin(angle),
+			Longitude: center.Longitude + lonRadiusDeg*math.Cos(angle),
 			Altitude:  center.Altitude,
 		}
 	}
-	
+
 	return points
 }

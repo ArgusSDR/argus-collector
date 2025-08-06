@@ -144,7 +144,7 @@ func displayFile(filename string, cmd *cobra.Command) error {
 				return fmt.Errorf("failed to display hex dump: %w", err)
 			}
 		}
-		
+
 		// For graph and stats, load samples into memory (these need all data for analysis)
 		if showGraph || showStats {
 			maxSamplesNeeded := 100000 // Default for stats
@@ -155,7 +155,7 @@ func displayFile(filename string, cmd *cobra.Command) error {
 				}
 				maxSamplesNeeded = max(maxSamplesNeeded, actualGraphSamples)
 			}
-			
+
 			fmt.Printf("⏳ Loading %d samples for analysis...\n", maxSamplesNeeded)
 			samples, err := readLimitedSamples(filename, maxSamplesNeeded)
 			if err != nil {
@@ -167,7 +167,7 @@ func displayFile(filename string, cmd *cobra.Command) error {
 				if !cmd.Flags().Changed("graph-samples") {
 					actualGraphSamples = min(int(sampleCount), 10000)
 				}
-				
+
 				graphSampleData := samples
 				if len(samples) > actualGraphSamples {
 					// Use evenly spaced samples
@@ -341,7 +341,7 @@ func readLimitedSamples(filename string, maxSamples int) ([]complex64, error) {
 	// Magic(5) + FileFormatVersion(2) + Frequency(8) + SampleRate(4) + CollectionTime(12) +
 	// GPS(24) + GPSTime(12) + DeviceInfoLen(1) + DeviceInfo + CollectionIDLen(1) + CollectionID + SampleCount(4)
 	headerSize := int64(5 + 2 + 8 + 4 + 12 + 24 + 12 + 1 + len(metadata.DeviceInfo) + 1 + len(metadata.CollectionID) + 4)
-	
+
 	_, err = file.Seek(headerSize, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to seek to sample data: %w", err)
@@ -371,7 +371,7 @@ func min(a, b int) int {
 	return b
 }
 
-// max returns the maximum of two integers  
+// max returns the maximum of two integers
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -527,7 +527,7 @@ func displaySamplesStreaming(filename string, metadata *filewriter.Metadata, tot
 	const batchSize = 1000 // Process in batches for better performance
 	var batch strings.Builder
 	batch.Grow(batchSize * 80) // Estimate 80 chars per row
-	
+
 	index := 0
 	for {
 		var real, imag float32
@@ -551,23 +551,23 @@ func displaySamplesStreaming(filename string, metadata *filewriter.Metadata, tot
 
 		batch.WriteString(fmt.Sprintf("%-8d %-14.6f %-14.6f %-14.6f %-12.2f\n",
 			index, realPart, imagPart, magnitude, phase))
-		
+
 		index++
-		
+
 		// Output batch when it's full
 		if index%batchSize == 0 {
 			fmt.Print(batch.String())
 			batch.Reset()
 		}
 	}
-	
+
 	// Output remaining batch
 	if batch.Len() > 0 {
 		fmt.Print(batch.String())
 	}
 
 	fmt.Println()
-	
+
 	return nil
 }
 
@@ -596,7 +596,7 @@ func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSa
 	offset := 0
 	showInterpretation := true
 	interpretCount := 0
-	
+
 	for {
 		n, err := file.Read(buffer[:])
 		if n == 0 {
@@ -609,12 +609,12 @@ func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSa
 		// Build hex representation
 		var hexPart strings.Builder
 		var asciiPart strings.Builder
-		
+
 		for i := 0; i < 16; i++ {
 			if i < n {
 				b := buffer[i]
 				hexPart.WriteString(fmt.Sprintf("%02x ", b))
-				
+
 				// ASCII representation
 				if b >= 32 && b <= 126 {
 					asciiPart.WriteByte(b)
@@ -628,44 +628,44 @@ func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSa
 		}
 
 		fmt.Printf("%08x %-48s %s\n", offset, hexPart.String(), asciiPart.String())
-		
+
 		// Show sample interpretation for first few complete samples
 		if showInterpretation && offset%8 == 0 && n >= 8 && interpretCount < 4 {
 			// We have at least one complete sample, interpret it
 			for i := 0; i+7 < n && interpretCount < 4; i += 8 {
 				// Extract real and imaginary parts from bytes
-				realBits := binary.LittleEndian.Uint32(buffer[i:i+4])
-				imagBits := binary.LittleEndian.Uint32(buffer[i+4:i+8])
-				
+				realBits := binary.LittleEndian.Uint32(buffer[i : i+4])
+				imagBits := binary.LittleEndian.Uint32(buffer[i+4 : i+8])
+
 				realVal := math.Float32frombits(realBits)
 				imagVal := math.Float32frombits(imagBits)
-				
+
 				sampleNum := (offset + i) / 8
 				if interpretCount == 0 {
 					fmt.Printf("\nSample Interpretation (first few samples):\n")
 				}
-				
+
 				fmt.Printf("Sample %d: I=%f Q=%f | I bytes: %02x %02x %02x %02x | Q bytes: %02x %02x %02x %02x\n",
 					sampleNum, realVal, imagVal,
 					buffer[i], buffer[i+1], buffer[i+2], buffer[i+3],
 					buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7])
-				
+
 				interpretCount++
 			}
-			
+
 			if interpretCount >= 4 {
 				showInterpretation = false
 				fmt.Println()
 			}
 		}
-		
+
 		offset += n
-		
+
 		if err == io.EOF {
 			break
 		}
 	}
-	
+
 	fmt.Println()
 	return nil
 }
@@ -850,12 +850,12 @@ func displayStatistics(samples []complex64) {
 	// Calculate signal strength metrics
 	rmsAmplitude := math.Sqrt(meanPower)
 	signalStrengthDbm := 10*math.Log10(meanPower) - 30 // Convert to dBm (assuming 50-ohm impedance)
-	
+
 	// Calculate noise floor estimation using lowest 10% of magnitude samples
 	// Sort magnitudes to find noise floor
 	sortedMags := make([]float64, len(magnitudes))
 	copy(sortedMags, magnitudes)
-	
+
 	// Simple bubble sort for the bottom 10%
 	n := len(sortedMags)
 	for i := 0; i < n-1; i++ {
@@ -865,7 +865,7 @@ func displayStatistics(samples []complex64) {
 			}
 		}
 	}
-	
+
 	// Use bottom 10% for noise floor estimation
 	noiseFloorSamples := int(float64(len(sortedMags)) * 0.1)
 	if noiseFloorSamples < 10 {
@@ -874,14 +874,14 @@ func displayStatistics(samples []complex64) {
 	if noiseFloorSamples > len(sortedMags) {
 		noiseFloorSamples = len(sortedMags)
 	}
-	
+
 	var noiseFloorSum float64
 	for i := 0; i < noiseFloorSamples; i++ {
 		noiseFloorSum += sortedMags[i] * sortedMags[i] // Convert to power
 	}
 	noiseFloorPower := noiseFloorSum / float64(noiseFloorSamples)
 	noiseFloorDb := 10 * math.Log10(noiseFloorPower)
-	
+
 	// Calculate Signal-to-Noise Ratio
 	signalPowerDb := 10 * math.Log10(meanPower)
 	snrDb := signalPowerDb - noiseFloorDb

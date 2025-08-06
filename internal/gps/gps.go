@@ -111,8 +111,8 @@ func (n *NMEASerial) configureUbloxNMEA() {
 	// UBX-CFG-MSG: Enable GGA messages (Class=0xF0, ID=0x00) on UART1 (port 1)
 	// Message format: 0xB5 0x62 0x06 0x01 0x08 0x00 0xF0 0x00 0x00 0x01 0x00 0x00 0x00 0x00 + checksum
 	ggaCmd := []byte{0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31}
-	
-	// Send u-blox UBX command to enable NMEA RMC messages on UART1  
+
+	// Send u-blox UBX command to enable NMEA RMC messages on UART1
 	// UBX-CFG-MSG: Enable RMC messages (Class=0xF0, ID=0x04) on UART1 (port 1)
 	rmcCmd := []byte{0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x05, 0x3B}
 
@@ -183,7 +183,7 @@ func (n *NMEASerial) readLoop() {
 		if len(line) == 0 || line[0] != '$' {
 			continue
 		}
-		
+
 		// Validate that line contains only printable ASCII to filter out binary data
 		isPrintable := true
 		for _, r := range line {
@@ -463,7 +463,7 @@ func (g *GPSDClient) Start() error {
 				Altitude:   tpv.Alt,
 				Timestamp:  tpv.Time,
 				FixQuality: fixQuality,
-				Satellites: 0, // TPV doesn't include satellite count
+				Satellites: g.position.Satellites, // Preserve existing satellite count from SKY reports
 			}
 
 			g.position = pos
@@ -482,9 +482,14 @@ func (g *GPSDClient) Start() error {
 			return
 		}
 
-		// Update satellite count in current position
+		// Update satellite count - preserve existing position data if available
+		satCount := len(sky.Satellites)
 		if g.position.FixQuality > 0 {
-			g.position.Satellites = len(sky.Satellites)
+			// Update existing valid position with new satellite count
+			g.position.Satellites = satCount
+		} else {
+			// Store satellite count for when position becomes available
+			g.position.Satellites = satCount
 		}
 	})
 

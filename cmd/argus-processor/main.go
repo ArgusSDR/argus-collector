@@ -83,7 +83,7 @@ func init() {
 
 	// Mark required flags, but version should be handled first
 	rootCmd.MarkFlagRequired("input")
-	
+
 	// Handle version flag early
 	rootCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if showVersion {
@@ -158,7 +158,7 @@ func runProcessor(cmd *cobra.Command) error {
 
 	// Process the files
 	fmt.Printf("⚙️  Processing %d files with %s algorithm...\n", len(files), algorithm)
-	
+
 	// Estimate processing time based on file count
 	estimatedTime := len(files) * len(files) * 30 // Rough estimate: 30 seconds per pair
 	if estimatedTime > 60 {
@@ -166,7 +166,7 @@ func runProcessor(cmd *cobra.Command) error {
 	} else {
 		fmt.Printf("⏱️  Estimated processing time: ~%d seconds\n", estimatedTime)
 	}
-	
+
 	result, err := proc.ProcessFiles(files)
 	if err != nil {
 		return fmt.Errorf("TDOA processing failed: %w", err)
@@ -182,7 +182,7 @@ func runProcessor(cmd *cobra.Command) error {
 
 	// Export results
 	fmt.Printf("📤 Exporting results to %s...\n", outputFile)
-	
+
 	if err := exportResults(result, outputFormat, outputFile); err != nil {
 		return fmt.Errorf("failed to export results: %w", err)
 	}
@@ -198,7 +198,7 @@ func formatFileList(files []string) string {
 	if len(files) == 0 {
 		return "  (none)"
 	}
-	
+
 	result := ""
 	for i, file := range files {
 		result += fmt.Sprintf("  %d. %s\n", i+1, filepath.Base(file))
@@ -229,7 +229,7 @@ func generateOutputFilename(result *processor.Result, format, outputDir string) 
 	// Format: tdoa_YYYYMMDD_HHMMSS_433920000Hz_heatmap.geojson
 	timestamp := result.ProcessingTime.Format("20060102_150405")
 	frequency := fmt.Sprintf("%.0fHz", result.Frequency)
-	
+
 	var suffix string
 	switch format {
 	case "geojson":
@@ -263,7 +263,7 @@ func exportResults(result *processor.Result, format, filename string) error {
 // displaySummary shows a summary of the processing results
 func displaySummary(result *processor.Result, outputFile string) {
 	fmt.Printf("\n✅ TDOA Processing Complete!\n\n")
-	
+
 	fmt.Printf("📊 Results Summary:\n")
 	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
 	fmt.Printf("│ Parameter               │ Value                                   │\n")

@@ -268,7 +268,7 @@ func runCollector(cmd *cobra.Command) error {
 		// Use config file value if available, otherwise fall back to code default
 		durationStr = viper.GetString("collection.duration")
 	}
-	
+
 	durationParsed, err := time.ParseDuration(durationStr)
 	if err != nil {
 		return fmt.Errorf("invalid duration format: %w", err)

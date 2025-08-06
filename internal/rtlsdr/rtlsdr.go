@@ -339,7 +339,7 @@ func (d *Device) StartCollection(duration time.Duration, samplesChan chan<- IQSa
 
 	// Read samples in chunks to manage memory usage
 	zeroReadCount := 0
-	maxZeroReads := 3 // Allow up to 3 consecutive zero reads before giving up
+	maxZeroReads := 3                  // Allow up to 3 consecutive zero reads before giving up
 	maxReadInterval := 2 * time.Second // If ReadSync takes longer than 2 seconds, likely hung
 
 readLoop:

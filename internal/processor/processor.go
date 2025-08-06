@@ -17,7 +17,7 @@ import (
 type Config struct {
 	Algorithm      string   // TDOA algorithm to use
 	Confidence     float64  // Minimum confidence threshold
-	MaxDistance    float64  // Maximum expected transmitter distance (km)  
+	MaxDistance    float64  // Maximum expected transmitter distance (km)
 	FrequencyRange []string // Frequency ranges to analyze
 	Verbose        bool     // Enable verbose logging
 }
@@ -31,35 +31,35 @@ type Location struct {
 
 // ReceiverInfo contains information about a receiver station
 type ReceiverInfo struct {
-	ID       string    `json:"id"`
-	Location Location  `json:"location"`
-	Filename string    `json:"filename"`
-	SNR      float64   `json:"snr"`
+	ID       string               `json:"id"`
+	Location Location             `json:"location"`
+	Filename string               `json:"filename"`
+	SNR      float64              `json:"snr"`
 	Metadata *filewriter.Metadata `json:"-"`
-	Samples  []complex64 `json:"-"`
+	Samples  []complex64          `json:"-"`
 }
 
 // TDOAMeasurement represents a time difference measurement between two receivers
 type TDOAMeasurement struct {
-	Receiver1ID    string  `json:"receiver1_id"`
-	Receiver2ID    string  `json:"receiver2_id"`
-	TimeDiff       float64 `json:"time_diff_ns"`      // Time difference in nanoseconds
-	DistanceDiff   float64 `json:"distance_diff_m"`   // Distance difference in meters
-	Confidence     float64 `json:"confidence"`        // Measurement confidence (0-1)
+	Receiver1ID     string  `json:"receiver1_id"`
+	Receiver2ID     string  `json:"receiver2_id"`
+	TimeDiff        float64 `json:"time_diff_ns"`     // Time difference in nanoseconds
+	DistanceDiff    float64 `json:"distance_diff_m"`  // Distance difference in meters
+	Confidence      float64 `json:"confidence"`       // Measurement confidence (0-1)
 	CorrelationPeak float64 `json:"correlation_peak"` // Cross-correlation peak value
 }
 
 // Result holds the complete TDOA processing results
 type Result struct {
-	Location           Location           `json:"location"`
-	Confidence         float64            `json:"confidence"`
-	ErrorRadius        float64            `json:"error_radius_m"`
-	Algorithm          string             `json:"algorithm"`
-	Frequency          float64            `json:"frequency_hz"`
-	ProcessingTime     time.Time          `json:"processing_time"`
-	ReceiverLocations  []ReceiverInfo     `json:"receivers"`
-	TDOAMeasurements   []TDOAMeasurement  `json:"tdoa_measurements"`
-	HeatmapPoints      []HeatmapPoint     `json:"heatmap_points,omitempty"`
+	Location          Location          `json:"location"`
+	Confidence        float64           `json:"confidence"`
+	ErrorRadius       float64           `json:"error_radius_m"`
+	Algorithm         string            `json:"algorithm"`
+	Frequency         float64           `json:"frequency_hz"`
+	ProcessingTime    time.Time         `json:"processing_time"`
+	ReceiverLocations []ReceiverInfo    `json:"receivers"`
+	TDOAMeasurements  []TDOAMeasurement `json:"tdoa_measurements"`
+	HeatmapPoints     []HeatmapPoint    `json:"heatmap_points,omitempty"`
 }
 
 // HeatmapPoint represents a point in the probability heatmap
@@ -167,25 +167,25 @@ func (p *Processor) loadReceivers(filenames []string) ([]ReceiverInfo, error) {
 		// Get file size for progress estimation
 		if fileInfo, err := os.Stat(filename); err == nil {
 			sizeMB := float64(fileInfo.Size()) / (1024 * 1024)
-			fmt.Printf("   📁 Loading %s (%.1f MB) (%d/%d)...\n", 
+			fmt.Printf("   📁 Loading %s (%.1f MB) (%d/%d)...\n",
 				filepath.Base(filename), sizeMB, i+1, len(filenames))
 		} else {
 			fmt.Printf("   📁 Loading %s (%d/%d)...\n", filepath.Base(filename), i+1, len(filenames))
 		}
-		
+
 		// Use progress-aware file reading for large files
 		metadata, samples, err := p.readFileWithProgress(filename)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", filename, err)
 		}
-		
+
 		fmt.Printf("      ✅ Loaded %d samples\n", len(samples))
 
 		// Calculate basic signal metrics
 		snr := p.calculateSNR(samples)
 
 		receivers[i] = ReceiverInfo{
-			ID:       fmt.Sprintf("R%d", i+1),
+			ID: fmt.Sprintf("R%d", i+1),
 			Location: Location{
 				Latitude:  metadata.GPSLocation.Latitude,
 				Longitude: metadata.GPSLocation.Longitude,
@@ -272,7 +272,7 @@ func (p *Processor) calculateSNR(samples []complex64) float64 {
 		powers[i] = float64(real(sample)*real(sample) + imag(sample)*imag(sample))
 	}
 	sort.Float64s(powers)
-	
+
 	noiseFloor := 0.0
 	noiseCount := len(powers) / 4 // Bottom 25%
 	for i := 0; i < noiseCount; i++ {
@@ -318,13 +318,13 @@ func (p *Processor) performTDOAAnalysis(receivers []ReceiverInfo) ([]TDOAMeasure
 	for i := 0; i < len(receivers); i++ {
 		for j := i + 1; j < len(receivers); j++ {
 			pairCount++
-			fmt.Printf("   🔗 Correlating %s ↔ %s (%d/%d)...\n", 
+			fmt.Printf("   🔗 Correlating %s ↔ %s (%d/%d)...\n",
 				receivers[i].ID, receivers[j].ID, pairCount, totalPairs)
-				
+
 			measurement, err := p.crossCorrelate(receivers[i], receivers[j])
 			if err != nil {
 				if p.config.Verbose {
-					fmt.Printf("⚠️  Cross-correlation failed for %s-%s: %v\n", 
+					fmt.Printf("⚠️  Cross-correlation failed for %s-%s: %v\n",
 						receivers[i].ID, receivers[j].ID, err)
 				}
 				continue
@@ -363,13 +363,13 @@ func (p *Processor) performTDOAAnalysis(receivers []ReceiverInfo) ([]TDOAMeasure
 func (p *Processor) crossCorrelate(r1, r2 ReceiverInfo) (*TDOAMeasurement, error) {
 	// For now, implement a simplified correlation method
 	// In a full implementation, this would use FFT-based cross-correlation
-	
+
 	// Ensure we have enough samples
 	minLen := len(r1.Samples)
 	if len(r2.Samples) < minLen {
 		minLen = len(r2.Samples)
 	}
-	
+
 	if minLen < 1000 {
 		return nil, fmt.Errorf("insufficient samples for correlation")
 	}
@@ -398,7 +398,7 @@ func (p *Processor) crossCorrelate(r1, r2 ReceiverInfo) (*TDOAMeasurement, error
 			maxCorr = corr
 			bestDelay = delay
 		}
-		
+
 		// Show progress for long searches
 		if p.config.Verbose && maxSearchDelay > 1000 && (delay-(-maxSearchDelay))%(maxSearchDelay/5) == 0 {
 			progress := float64(delay+maxSearchDelay) / float64(2*maxSearchDelay) * 100
@@ -479,12 +479,12 @@ func (p *Processor) calculateCorrelation(sig1, sig2 []complex64, delay int) floa
 
 	// Calculate normalized correlation coefficient
 	num := sumProduct - complex(n, 0)*mean1*complex(real(mean2), -imag(mean2))
-	
+
 	var1 := sum1Sq - complex(n, 0)*mean1*complex(real(mean1), -imag(mean1))
 	var2 := sum2Sq - complex(n, 0)*mean2*complex(real(mean2), -imag(mean2))
 
-	denom := complex(math.Sqrt(real(var1) * real(var2)), 0)
-	
+	denom := complex(math.Sqrt(real(var1)*real(var2)), 0)
+
 	if real(denom) == 0 {
 		return 0.0
 	}
@@ -498,7 +498,7 @@ func (p *Processor) calculateLocation(receivers []ReceiverInfo, measurements []T
 	if len(measurements) == 0 {
 		return nil, 0, 0, fmt.Errorf("no TDOA measurements available")
 	}
-	
+
 	// Warn if we have fewer than optimal measurements
 	if len(measurements) < 3 {
 		fmt.Printf("⚠️  Only %d TDOA measurements available (optimal: 3+) - accuracy may be limited\n", len(measurements))
@@ -506,14 +506,14 @@ func (p *Processor) calculateLocation(receivers []ReceiverInfo, measurements []T
 
 	// For this implementation, use a simplified least-squares approach
 	// In practice, this would use more sophisticated algorithms like Newton-Raphson
-	
+
 	// Start with centroid of receivers as initial guess
 	var sumLat, sumLon float64
 	for _, r := range receivers {
 		sumLat += r.Location.Latitude
 		sumLon += r.Location.Longitude
 	}
-	
+
 	initialLat := sumLat / float64(len(receivers))
 	initialLon := sumLon / float64(len(receivers))
 
@@ -542,10 +542,10 @@ func (p *Processor) calculateLocation(receivers []ReceiverInfo, measurements []T
 func (p *Processor) estimateErrorRadius(receivers []ReceiverInfo, measurements []TDOAMeasurement, confidence float64) float64 {
 	// Calculate geometric dilution of precision (GDOP) approximation
 	// For now, use a simple estimate based on receiver spacing and confidence
-	
+
 	var avgSpacing float64
 	count := 0
-	
+
 	for i := 0; i < len(receivers); i++ {
 		for j := i + 1; j < len(receivers); j++ {
 			dist := p.distanceBetweenLocations(receivers[i].Location, receivers[j].Location)
@@ -553,17 +553,17 @@ func (p *Processor) estimateErrorRadius(receivers []ReceiverInfo, measurements [
 			count++
 		}
 	}
-	
+
 	if count > 0 {
 		avgSpacing /= float64(count)
 	}
 
 	// Error radius inversely related to confidence and receiver spacing
-	baseError := 100.0 / confidence // Base error in meters
+	baseError := 100.0 / confidence   // Base error in meters
 	gdopFactor := 1000.0 / avgSpacing // GDOP approximation
-	
+
 	errorRadius := baseError * gdopFactor
-	
+
 	// Clamp to reasonable bounds
 	if errorRadius < 10.0 {
 		errorRadius = 10.0
@@ -571,38 +571,38 @@ func (p *Processor) estimateErrorRadius(receivers []ReceiverInfo, measurements [
 	if errorRadius > 5000.0 {
 		errorRadius = 5000.0
 	}
-	
+
 	return errorRadius
 }
 
 // generateHeatmap generates probability heatmap points around the calculated location
 func (p *Processor) generateHeatmap(receivers []ReceiverInfo, measurements []TDOAMeasurement, center Location, errorRadius float64) []HeatmapPoint {
 	var points []HeatmapPoint
-	
+
 	// Generate grid of points around the center location
-	gridSize := 20 // 20x20 grid
+	gridSize := 20                                  // 20x20 grid
 	stepSize := errorRadius * 2 / float64(gridSize) // Grid step in meters
-	
+
 	for i := 0; i < gridSize; i++ {
 		for j := 0; j < gridSize; j++ {
 			// Calculate offset from center
 			offsetX := (float64(i) - float64(gridSize)/2) * stepSize
 			offsetY := (float64(j) - float64(gridSize)/2) * stepSize
-			
+
 			// Convert meter offsets to lat/lon offsets (approximate)
 			latOffset := offsetY / 111000.0 // Approximate meters per degree latitude
-			lonOffset := offsetX / (111000.0 * math.Cos(center.Latitude * math.Pi / 180))
-			
+			lonOffset := offsetX / (111000.0 * math.Cos(center.Latitude*math.Pi/180))
+
 			point := Location{
 				Latitude:  center.Latitude + latOffset,
 				Longitude: center.Longitude + lonOffset,
 				Altitude:  center.Altitude,
 			}
-			
+
 			// Calculate probability based on distance from center
 			distance := p.distanceBetweenLocations(center, point)
 			probability := math.Exp(-distance * distance / (2 * errorRadius * errorRadius))
-			
+
 			if probability > 0.01 { // Only include points with meaningful probability
 				points = append(points, HeatmapPoint{
 					Location:    point,
@@ -611,7 +611,7 @@ func (p *Processor) generateHeatmap(receivers []ReceiverInfo, measurements []TDO
 			}
 		}
 	}
-	
+
 	return points
 }
 
@@ -623,7 +623,7 @@ func (p *Processor) readFileWithProgress(filename string) (*filewriter.Metadata,
 		return nil, nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 	fileSize := fileInfo.Size()
-	
+
 	// For small files, just use regular reading
 	if fileSize < 10*1024*1024 { // Less than 10MB
 		return filewriter.ReadFile(filename)
@@ -637,7 +637,7 @@ func (p *Processor) readFileWithProgress(filename string) (*filewriter.Metadata,
 
 	// Read header with progress reporting
 	fmt.Printf("      📊 Reading header...")
-	
+
 	// Read magic header
 	magic := make([]byte, 5)
 	if _, err := file.Read(magic); err != nil {
@@ -648,7 +648,7 @@ func (p *Processor) readFileWithProgress(filename string) (*filewriter.Metadata,
 	}
 
 	var metadata filewriter.Metadata
-	
+
 	// Read metadata fields in order (same as filewriter.ReadFile)
 	if err := binary.Read(file, binary.LittleEndian, &metadata.FileFormatVersion); err != nil {
 		return nil, nil, err
@@ -717,22 +717,22 @@ func (p *Processor) readFileWithProgress(filename string) (*filewriter.Metadata,
 
 	fmt.Printf(" ✅ Complete\n")
 	fmt.Printf("      📊 Reading %d samples...\n", sampleCount)
-	
+
 	// Read samples with progress reporting
 	samples := make([]complex64, sampleCount)
-	const chunkSize = 1024 * 1024 // 1MB chunks
+	const chunkSize = 1024 * 1024    // 1MB chunks
 	samplesPerChunk := chunkSize / 8 // 8 bytes per complex64 (2 float32s)
-	
+
 	var samplesRead uint32
 	lastProgress := -1
-	
+
 	for samplesRead < sampleCount {
 		// Calculate how many samples to read in this chunk
 		samplesToRead := samplesPerChunk
-		if samplesRead + uint32(samplesToRead) > sampleCount {
+		if samplesRead+uint32(samplesToRead) > sampleCount {
 			samplesToRead = int(sampleCount - samplesRead)
 		}
-		
+
 		// Read chunk of samples
 		for i := 0; i < samplesToRead; i++ {
 			var real, imag float32
@@ -742,11 +742,11 @@ func (p *Processor) readFileWithProgress(filename string) (*filewriter.Metadata,
 			if err := binary.Read(file, binary.LittleEndian, &imag); err != nil {
 				return nil, nil, err
 			}
-			samples[samplesRead + uint32(i)] = complex(real, imag)
+			samples[samplesRead+uint32(i)] = complex(real, imag)
 		}
-		
+
 		samplesRead += uint32(samplesToRead)
-		
+
 		// Calculate and display progress
 		progress := int((float64(samplesRead) / float64(sampleCount)) * 100)
 		if progress != lastProgress && progress%10 == 0 {
@@ -754,7 +754,7 @@ func (p *Processor) readFileWithProgress(filename string) (*filewriter.Metadata,
 			lastProgress = progress
 		}
 	}
-	
+
 	fmt.Printf("         Progress: 100%%\n")
 
 	return &metadata, samples, nil
