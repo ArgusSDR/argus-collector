@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>TDOA Transmitter Location Analysis</name>
+    <description>Frequency: 162.400 MHz, Algorithm: basic, Confidence: 0.00</description>
+    
+    <!-- Styles -->
+    <Style id="transmitterStyle">
+      <IconStyle>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/shapes/target.png</href>
+        </Icon>
+        <scale>1.5</scale>
+        <color>ff0000ff</color>
+      </IconStyle>
+      <LabelStyle>
+        <scale>1.2</scale>
+      </LabelStyle>
+    </Style>
+    
+    <Style id="receiverStyle">
+      <IconStyle>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href>
+        </Icon>
+        <color>ff00ff00</color>
+      </IconStyle>
+    </Style>
+    
+    <Style id="confidenceStyle">
+      <LineStyle>
+        <color>7f0000ff</color>
+        <width>2</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>3f0000ff</color>
+      </PolyStyle>
+    </Style>
+    
+    <Style id="baselineStyle">
+      <LineStyle>
+        <color>ff00ffff</color>
+        <width>1</width>
+      </LineStyle>
+    </Style>
+
+    <Placemark>
+      <name>Estimated Transmitter Location</name>
+      <description>Confidence: 0.00, Error Radius: 5000.0 m, Algorithm: basic</description>
+      <styleUrl>#transmitterStyle</styleUrl>
+      <Point>
+        <coordinates>-97.61429433,35.55440350,0.0</coordinates>
+      </Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Confidence Area</name>
+      <description>5000.0 meter radius confidence area</description>
+      <styleUrl>#confidenceStyle</styleUrl>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+-97.55892677,35.55440350,0.0 -97.55976793,35.56222549,0.0 -97.56226584,35.56980982,0.0 -97.56634461,35.57692603,0.0 -97.57188032,35.58335790,0.0 -97.57870475,35.58891001,0.0 -97.58661055,35.59341366,0.0 -97.59535751,35.59673200,0.0 -97.60467986,35.59876421,0.0 -97.61429433,35.59944855,0.0 -97.62390881,35.59876421,0.0 -97.63323116,35.59673200,0.0 -97.64197812,35.59341366,0.0 -97.64988392,35.58891001,0.0 -97.65670835,35.58335790,0.0 -97.66224405,35.57692603,0.0 -97.66632283,35.56980982,0.0 -97.66882074,35.56222549,0.0 -97.66966190,35.55440350,0.0 -97.66882074,35.54658151,0.0 -97.66632283,35.53899719,0.0 -97.66224405,35.53188098,0.0 -97.65670835,35.52544911,0.0 -97.64988392,35.51989700,0.0 -97.64197812,35.51539335,0.0 -97.63323116,35.51207501,0.0 -97.62390881,35.51004279,0.0 -97.61429433,35.50935846,0.0 -97.60467986,35.51004279,0.0 -97.59535751,35.51207501,0.0 -97.58661055,35.51539335,0.0 -97.57870475,35.51989700,0.0 -97.57188032,35.52544911,0.0 -97.56634461,35.53188098,0.0 -97.56226584,35.53899719,0.0 -97.55976793,35.54658151,0.0 
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>R1</name>
+      <description>SNR: 0.0 dB, File: data/argus-0_1754100655.dat</description>
+      <styleUrl>#receiverStyle</styleUrl>
+      <Point>
+        <coordinates>-97.60027900,35.59694417,365.0</coordinates>
+      </Point>
+    </Placemark>
+
+    <Placemark>
+      <name>R2</name>
+      <description>SNR: 0.0 dB, File: data/argus-1_1754100655.dat</description>
+      <styleUrl>#receiverStyle</styleUrl>
+      <Point>
+        <coordinates>-97.61130200,35.52313317,365.0</coordinates>
+      </Point>
+    </Placemark>
+
+    <Placemark>
+      <name>R3</name>
+      <description>SNR: 0.0 dB, File: data/argus-2_1754100655.dat</description>
+      <styleUrl>#receiverStyle</styleUrl>
+      <Point>
+        <coordinates>-97.63130200,35.54313317,365.0</coordinates>
+      </Point>
+    </Placemark>
+
+    <Placemark>
+      <name>R1-R2 TDOA Baseline</name>
+      <description>Time Diff: 0.0 ns, Distance Diff: 0.0 m, Confidence: 0.000</description>
+      <styleUrl>#baselineStyle</styleUrl>
+      <LineString>
+        <coordinates>
+          -97.60027900,35.59694417,365.0 -97.61130200,35.52313317,365.0
+        </coordinates>
+      </LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>R1-R3 TDOA Baseline</name>
+      <description>Time Diff: 0.0 ns, Distance Diff: 0.0 m, Confidence: 0.000</description>
+      <styleUrl>#baselineStyle</styleUrl>
+      <LineString>
+        <coordinates>
+          -97.60027900,35.59694417,365.0 -97.63130200,35.54313317,365.0
+        </coordinates>
+      </LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>R2-R3 TDOA Baseline</name>
+      <description>Time Diff: 0.0 ns, Distance Diff: 0.0 m, Confidence: 0.000</description>
+      <styleUrl>#baselineStyle</styleUrl>
+      <LineString>
+        <coordinates>
+          -97.61130200,35.52313317,365.0 -97.63130200,35.54313317,365.0
+        </coordinates>
+      </LineString>
+    </Placemark>
+
+  </Document>
+</kml>

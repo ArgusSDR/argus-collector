@@ -105,9 +105,7 @@ func displayFile(filename string, cmd *cobra.Command) error {
 	// Actual samples will be loaded only if requested
 
 	// Display file information
-	fmt.Printf("╔══════════════════════════════════════════════════════════════╗\n")
-	fmt.Printf("║               ARGUS DATA FILE READER %s                ║\n", fmt.Sprintf("%-8s", version.GetFullVersion()))
-	fmt.Printf("╚══════════════════════════════════════════════════════════════╝\n\n")
+	fmt.Printf("ARGUS DATA FILE READER %s\n\n", version.GetFullVersion())
 
 	// Display file info
 	fileInfo, err := os.Stat(filename)
@@ -116,9 +114,9 @@ func displayFile(filename string, cmd *cobra.Command) error {
 	}
 
 	fmt.Printf("📁 File Information:\n")
-	fmt.Printf("   Name: %s\n", filepath.Base(filename))
-	fmt.Printf("   Size: %.2f MB (%d bytes)\n", float64(fileInfo.Size())/(1024*1024), fileInfo.Size())
-	fmt.Printf("   Modified: %s\n\n", fileInfo.ModTime().Format("2006-01-02 15:04:05"))
+	fmt.Printf("Name: %s\n", filepath.Base(filename))
+	fmt.Printf("Size: %.2f MB (%d bytes)\n", float64(fileInfo.Size())/(1024*1024), fileInfo.Size())
+	fmt.Printf("Modified: %s\n\n", fileInfo.ModTime().Format("2006-01-02 15:04:05"))
 
 	// Display metadata
 	displayMetadata(metadata)
@@ -417,33 +415,22 @@ func displayMetadata(metadata *filewriter.Metadata) {
 	deviceSettings := parseDeviceInfo(metadata.DeviceInfo)
 
 	fmt.Printf("📊 Collection Metadata:\n")
-	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
-	fmt.Printf("│ Parameter               │ Value                                   │\n")
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ File Format Version     │ %d                                       │\n", metadata.FileFormatVersion)
-	fmt.Printf("│ Collection ID           │ %-39s │\n", metadata.CollectionID)
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Frequency               │ %.3f MHz                              │\n", float64(metadata.Frequency)/1e6)
-	fmt.Printf("│ Sample Rate             │ %.3f MSps                             │\n", float64(metadata.SampleRate)/1e6)
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Collection Time         │ %s │\n", metadata.CollectionTime.Format("2006-01-02 15:04:05.000"))
-	fmt.Printf("│ GPS Timestamp           │ %s │\n", metadata.GPSTimestamp.Format("2006-01-02 15:04:05.000"))
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ GPS Latitude            │ %14.8f°                        │\n", metadata.GPSLocation.Latitude)
-	fmt.Printf("│ GPS Longitude           │ %14.8f°                        │\n", metadata.GPSLocation.Longitude)
-	fmt.Printf("│ GPS Altitude            │ %14.2f m                         │\n", metadata.GPSLocation.Altitude)
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
+	fmt.Printf("File Format Version: %d\n", metadata.FileFormatVersion)
+	fmt.Printf("Collection ID: %s\n", metadata.CollectionID)
+	fmt.Printf("Frequency: %.3f MHz\n", float64(metadata.Frequency)/1e6)
+	fmt.Printf("Sample Rate: %.3f MSps\n", float64(metadata.SampleRate)/1e6)
+	fmt.Printf("Collection Time: %s\n", metadata.CollectionTime.Format("2006-01-02 15:04:05.000"))
+	fmt.Printf("GPS Timestamp: %s\n", metadata.GPSTimestamp.Format("2006-01-02 15:04:05.000"))
+	fmt.Printf("GPS Latitude: %14.8f°\n", metadata.GPSLocation.Latitude)
+	fmt.Printf("GPS Longitude: %14.8f°\n", metadata.GPSLocation.Longitude)
+	fmt.Printf("GPS Altitude: %14.2f m\n\n", metadata.GPSLocation.Altitude)
 
 	// Display device configuration prominently
 	fmt.Printf("📻 Device Configuration:\n")
-	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
-	fmt.Printf("│ Parameter               │ Value                                   │\n")
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Device Name             │ %-39s │\n", deviceSettings.Name)
-	fmt.Printf("│ Gain Setting            │ %-39s │\n", deviceSettings.Gain)
-	fmt.Printf("│ Gain Mode               │ %-39s │\n", deviceSettings.GainMode)
-	fmt.Printf("│ Bias Tee               │ %-39s │\n", deviceSettings.BiasTee)
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
+	fmt.Printf("Device Name: %s\n", deviceSettings.Name)
+	fmt.Printf("Gain Setting: %s\n", deviceSettings.Gain)
+	fmt.Printf("Gain Mode: %s\n", deviceSettings.GainMode)
+	fmt.Printf("Bias Tee: %s\n\n", deviceSettings.BiasTee)
 }
 
 // displayDeviceAnalysis shows detailed analysis of device configuration
@@ -463,12 +450,11 @@ func displayDeviceAnalysis(deviceSettings DeviceSettings) {
 	default:
 		gainAnalysis = "Unknown gain mode"
 	}
-	fmt.Printf("│ Gain Control            │ %-39s │\n", gainAnalysis)
+	fmt.Printf("Gain Control: %s\n", gainAnalysis)
 
 	// Analyze gain setting if available
 	if deviceSettings.Gain != "Unknown" && deviceSettings.GainMode == "manual" {
-		fmt.Printf("│ Gain Impact             │ Higher values increase sensitivity      │\n")
-		fmt.Printf("│                         │ but may introduce noise                │\n")
+		fmt.Printf("Gain Impact: Higher values increase sensitivity but may introduce noise\n")
 	}
 
 	// Analyze bias tee
@@ -481,35 +467,30 @@ func displayDeviceAnalysis(deviceSettings DeviceSettings) {
 	default:
 		biasAnalysis = "Bias tee status unknown"
 	}
-	fmt.Printf("│ Bias Tee Status         │ %-39s │\n", biasAnalysis)
+	fmt.Printf("Bias Tee Status: %s\n", biasAnalysis)
 
 	// Recommendations
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Recommendations         │                                         │\n")
+	fmt.Printf("\nRecommendations:\n")
 	if deviceSettings.GainMode == "auto" {
-		fmt.Printf("│                         │ • AGC may cause gain variations        │\n")
-		fmt.Printf("│                         │ • Consider manual gain for consistency │\n")
+		fmt.Printf("• AGC may cause gain variations\n")
+		fmt.Printf("• Consider manual gain for consistency\n")
 	} else if deviceSettings.GainMode == "manual" {
-		fmt.Printf("│                         │ • Manual gain provides consistency     │\n")
-		fmt.Printf("│                         │ • Monitor for clipping or noise        │\n")
+		fmt.Printf("• Manual gain provides consistency\n")
+		fmt.Printf("• Monitor for clipping or noise\n")
 	}
 
 	if deviceSettings.BiasTee == "on" {
-		fmt.Printf("│                         │ • Bias tee active - check LNA power    │\n")
+		fmt.Printf("• Bias tee active - check LNA power\n")
 	}
 
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
+	fmt.Println()
 
 	// Show typical RTL-SDR gain values for reference
 	fmt.Printf("📊 RTL-SDR Gain Reference:\n")
-	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
-	fmt.Printf("│ Gain Level              │ Typical Use Case                        │\n")
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ 0.0 - 10.0 dB          │ Strong signals, prevent overload        │\n")
-	fmt.Printf("│ 10.0 - 30.0 dB         │ Medium signals, general purpose         │\n")
-	fmt.Printf("│ 30.0 - 50.0 dB         │ Weak signals, maximum sensitivity       │\n")
-	fmt.Printf("│ AUTO (AGC)             │ Automatic adjustment based on signal    │\n")
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
+	fmt.Printf("0.0 - 10.0 dB: Strong signals, prevent overload\n")
+	fmt.Printf("10.0 - 30.0 dB: Medium signals, general purpose\n")
+	fmt.Printf("30.0 - 50.0 dB: Weak signals, maximum sensitivity\n")
+	fmt.Printf("AUTO (AGC): Automatic adjustment based on signal\n\n")
 }
 
 // displaySampleInfo shows information about the IQ samples
@@ -517,22 +498,16 @@ func displaySampleInfo(sampleCount int, sampleRate uint32) {
 	duration := float64(sampleCount) / float64(sampleRate)
 
 	fmt.Printf("📡 Sample Information:\n")
-	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
-	fmt.Printf("│ Parameter               │ Value                                   │\n")
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Total Samples           │ %d                                    │\n", sampleCount)
-	fmt.Printf("│ Sample Type             │ Complex64 (32-bit I + 32-bit Q)        │\n")
-	fmt.Printf("│ Data Size               │ %.2f MB                               │\n", float64(sampleCount*8)/(1024*1024))
-	fmt.Printf("│ Collection Duration     │ %.3f seconds                          │\n", duration)
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
+	fmt.Printf("Total Samples: %d\n", sampleCount)
+	fmt.Printf("Sample Type: Complex64 (32-bit I + 32-bit Q)\n")
+	fmt.Printf("Data Size: %.2f MB\n", float64(sampleCount*8)/(1024*1024))
+	fmt.Printf("Collection Duration: %.3f seconds\n\n", duration)
 }
 
 // displaySamplesStreaming reads and displays samples as they're read from file
 func displaySamplesStreaming(filename string, metadata *filewriter.Metadata, totalSamples int) error {
 	fmt.Printf("📈 IQ Sample Data (streaming all %d samples):\n", totalSamples)
-	fmt.Printf("┌────────┬──────────────┬──────────────┬──────────────┬────────────┐\n")
-	fmt.Printf("│ #      │ I (Real)     │ Q (Imag)     │ Magnitude    │ Phase (°)  │\n")
-	fmt.Printf("├────────┼──────────────┼──────────────┼──────────────┼────────────┤\n")
+	fmt.Printf("%-8s %-14s %-14s %-14s %-12s\n", "#", "I (Real)", "Q (Imag)", "Magnitude", "Phase (°)")
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -574,7 +549,7 @@ func displaySamplesStreaming(filename string, metadata *filewriter.Metadata, tot
 		magnitude := math.Sqrt(realPart*realPart + imagPart*imagPart)
 		phase := math.Atan2(imagPart, realPart) * rad2deg
 
-		batch.WriteString(fmt.Sprintf("│ %-6d │ %12.6f │ %12.6f │ %12.6f │ %10.2f │\n",
+		batch.WriteString(fmt.Sprintf("%-8d %-14.6f %-14.6f %-14.6f %-12.2f\n",
 			index, realPart, imagPart, magnitude, phase))
 		
 		index++
@@ -591,7 +566,7 @@ func displaySamplesStreaming(filename string, metadata *filewriter.Metadata, tot
 		fmt.Print(batch.String())
 	}
 
-	fmt.Printf("└────────┴──────────────┴──────────────┴──────────────┴────────────┘\n\n")
+	fmt.Println()
 	
 	return nil
 }
@@ -601,8 +576,7 @@ func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSa
 	totalBytes := totalSamples * 8
 	fmt.Printf("🔍 Hex Dump of Raw Sample Data (streaming all %d bytes):\n", totalBytes)
 	fmt.Printf("Each complex64 sample = 8 bytes (4-byte float I + 4-byte float Q)\n")
-	fmt.Printf("Address  | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F | ASCII\n")
-	fmt.Printf("---------|------------------------------------------------|------------------\n")
+	fmt.Printf("%-9s %-48s %s\n", "Address", "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F", "ASCII")
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -653,7 +627,7 @@ func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSa
 			}
 		}
 
-		fmt.Printf("%08x | %-47s | %s\n", offset, hexPart.String(), asciiPart.String())
+		fmt.Printf("%08x %-48s %s\n", offset, hexPart.String(), asciiPart.String())
 		
 		// Show sample interpretation for first few complete samples
 		if showInterpretation && offset%8 == 0 && n >= 8 && interpretCount < 4 {
@@ -913,26 +887,19 @@ func displayStatistics(samples []complex64) {
 	snrDb := signalPowerDb - noiseFloorDb
 
 	fmt.Printf("📊 Statistical Analysis:\n")
-	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
-	fmt.Printf("│ Statistic               │ Value                                   │\n")
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Mean I (Real)           │ %12.6f                           │\n", meanI)
-	fmt.Printf("│ Mean Q (Imaginary)      │ %12.6f                           │\n", meanQ)
-	fmt.Printf("│ I Variance              │ %12.6f                           │\n", varI)
-	fmt.Printf("│ Q Variance              │ %12.6f                           │\n", varQ)
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Mean Magnitude          │ %12.6f                           │\n", meanMag)
-	fmt.Printf("│ Min Magnitude           │ %12.6f                           │\n", minMag)
-	fmt.Printf("│ Max Magnitude           │ %12.6f                           │\n", maxMag)
-	fmt.Printf("│ RMS Amplitude           │ %12.6f                           │\n", rmsAmplitude)
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Mean Power              │ %12.6f                           │\n", meanPower)
-	fmt.Printf("│ Signal Power (dB)       │ %12.2f dB                        │\n", signalPowerDb)
-	fmt.Printf("│ Signal Strength (dBm)   │ %12.2f dBm                       │\n", signalStrengthDbm)
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Noise Floor (dB)        │ %12.2f dB                        │\n", noiseFloorDb)
-	fmt.Printf("│ Signal-to-Noise Ratio   │ %12.2f dB                        │\n", snrDb)
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
+	fmt.Printf("Mean I (Real): %12.6f\n", meanI)
+	fmt.Printf("Mean Q (Imaginary): %12.6f\n", meanQ)
+	fmt.Printf("I Variance: %12.6f\n", varI)
+	fmt.Printf("Q Variance: %12.6f\n", varQ)
+	fmt.Printf("Mean Magnitude: %12.6f\n", meanMag)
+	fmt.Printf("Min Magnitude: %12.6f\n", minMag)
+	fmt.Printf("Max Magnitude: %12.6f\n", maxMag)
+	fmt.Printf("RMS Amplitude: %12.6f\n", rmsAmplitude)
+	fmt.Printf("Mean Power: %12.6f\n", meanPower)
+	fmt.Printf("Signal Power (dB): %12.2f dB\n", signalPowerDb)
+	fmt.Printf("Signal Strength (dBm): %12.2f dBm\n", signalStrengthDbm)
+	fmt.Printf("Noise Floor (dB): %12.2f dB\n", noiseFloorDb)
+	fmt.Printf("Signal-to-Noise Ratio: %12.2f dB\n\n", snrDb)
 }
 
 // main is the entry point of the application
