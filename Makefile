@@ -3,12 +3,16 @@
 # Build variables
 BINARY_NAME=argus-collector
 READER_NAME=argus-reader
+PROCESSOR_NAME=argus-processor
 BINARY_UNIX=$(BINARY_NAME)_unix
 BINARY_WINDOWS=$(BINARY_NAME)_windows.exe
 BINARY_DARWIN=$(BINARY_NAME)_darwin
 READER_UNIX=$(READER_NAME)_unix
 READER_WINDOWS=$(READER_NAME)_windows.exe
 READER_DARWIN=$(READER_NAME)_darwin
+PROCESSOR_UNIX=$(PROCESSOR_NAME)_unix
+PROCESSOR_WINDOWS=$(PROCESSOR_NAME)_windows.exe
+PROCESSOR_DARWIN=$(PROCESSOR_NAME)_darwin
 
 # Go parameters
 GOCMD=go
@@ -43,6 +47,7 @@ all: clean deps build
 build:
 	$(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_NAME) .
 	$(GOBUILD) $(LDFLAGS) -o $(READER_NAME) ./cmd/argus-reader
+	$(GOBUILD) $(LDFLAGS) -o $(PROCESSOR_NAME) ./cmd/argus-processor
 
 # Build the collector utility
 .PHONY: build-collector
@@ -54,9 +59,14 @@ build-collector:
 build-reader:
 	$(GOBUILD) $(LDFLAGS) -o $(READER_NAME) ./cmd/argus-reader
 
-# Build both collector and reader
+# Build the processor utility
+.PHONY: build-processor
+build-processor:
+	$(GOBUILD) $(LDFLAGS) -o $(PROCESSOR_NAME) ./cmd/argus-processor
+
+# Build all tools (collector, reader, processor)
 .PHONY: build-all-tools
-build-all-tools: build build-reader
+build-all-tools: build build-reader build-processor
 
 # Build without RTL-SDR support (for testing)
 .PHONY: build-stub
@@ -105,12 +115,16 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
 	rm -f $(READER_NAME)
+	rm -f $(PROCESSOR_NAME)
 	rm -f $(BINARY_UNIX)
 	rm -f $(BINARY_WINDOWS)
 	rm -f $(BINARY_DARWIN)
 	rm -f $(READER_UNIX)
 	rm -f $(READER_WINDOWS)
 	rm -f $(READER_DARWIN)
+	rm -f $(PROCESSOR_UNIX)
+	rm -f $(PROCESSOR_WINDOWS)
+	rm -f $(PROCESSOR_DARWIN)
 	rm -f coverage.out
 	rm -f coverage.html
 
@@ -167,13 +181,17 @@ help:
 	@echo "Argus Collector Build System"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  build         - Build binary with RTL-SDR support"
-	@echo "  build-stub    - Build binary without RTL-SDR (testing)"
-	@echo "  build-all     - Build for all platforms"
-	@echo "  build-linux   - Build for Linux"
-	@echo "  build-windows - Build for Windows"
-	@echo "  build-darwin  - Build for macOS"
-	@echo "  build-dev     - Development build with debug info"
+	@echo "  build           - Build all tools with RTL-SDR support"
+	@echo "  build-collector - Build collector binary only"
+	@echo "  build-reader    - Build reader utility only"
+	@echo "  build-processor - Build TDOA processor utility only"
+	@echo "  build-all-tools - Build all tools (collector, reader, processor)"
+	@echo "  build-stub      - Build binary without RTL-SDR (testing)"
+	@echo "  build-all       - Build for all platforms"
+	@echo "  build-linux     - Build for Linux"
+	@echo "  build-windows   - Build for Windows"
+	@echo "  build-darwin    - Build for macOS"
+	@echo "  build-dev       - Development build with debug info"
 	@echo ""
 	@echo "  deps          - Download and tidy dependencies"
 	@echo "  test          - Run tests"

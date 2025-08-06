@@ -12,7 +12,7 @@ A high-precision RTL-SDR signal collection tool designed for Time Difference of 
 - **TDOA-Ready Output**: Custom binary format optimized for multi-station analysis
 - **Nanosecond Precision**: High-resolution timestamps for accurate time difference calculations
 - **Bias Tee Control**: Built-in bias tee support for powering external LNAs
-- **Enhanced Analysis Tools**: Comprehensive argus-reader with device configuration analysis
+- **Enhanced Analysis Tools**: Comprehensive argus-reader with device configuration analysis and argus-processor for TDOA localization
 - **Configurable Collection**: Flexible frequency, duration, and output settings
 - **Graceful Operation**: Signal handling and error recovery mechanisms
 
@@ -95,6 +95,11 @@ make build
 
 # Development build without RTL-SDR (for testing)
 make build-stub
+
+# Build analysis tools
+make build-reader         # Build argus-reader tool
+make build-processor      # Build argus-processor TDOA tool
+make build-all-tools      # Build both analysis tools
 
 # Build for all platforms
 make build-all
@@ -970,6 +975,139 @@ real    0m0.002s  ← Ultra-fast metadata display
 - **Debugging**: Identify collection issues and verify file integrity
 
 For complete usage documentation, see: [argus-reader-README.md](argus-reader-README.md)
+
+### Argus Processor - TDOA Signal Processing
+
+The `argus-processor` tool analyzes multiple synchronized argus data files to calculate transmitter locations using Time Difference of Arrival (TDOA) algorithms. It performs cross-correlation analysis between receiver signals and generates map files for visualization in Google Earth or web mapping applications.
+
+**Key Features:**
+- **🎯 TDOA Processing** - Multi-receiver time difference analysis for transmitter localization
+- **🔗 Cross-correlation** - FFT-based signal correlation with confidence metrics
+- **🗺️ Multiple Output Formats** - KML (Google Earth), GeoJSON (web maps), CSV (analysis)
+- **📊 Progress Reporting** - Real-time progress for large file processing
+- **🔧 Flexible Thresholds** - Configurable confidence levels with fallback processing
+- **📍 Probability Heatmaps** - Confidence area visualization and error bounds
+- **⚙️ Algorithm Selection** - Basic, weighted, and Kalman filter approaches
+
+#### Basic Usage
+
+```bash
+# Build the processor tool
+make build-processor
+
+# Process 3+ synchronized data files (generates KML by default)
+./argus-processor --input "data/argus-?_1754061697.dat"
+
+# Process with custom confidence threshold
+./argus-processor --input "data/station*.dat" --confidence 0.3 --verbose
+
+# Generate GeoJSON for web mapping
+./argus-processor --input "data/argus*.dat" --output-format geojson
+
+# Generate CSV for analysis
+./argus-processor --input "data/*.dat" --output-format csv --output ./results
+```
+
+#### Multi-Station TDOA Workflow
+
+```bash
+# 1. Collect synchronized data from multiple stations
+./argus-collector -D NORTH001 --frequency 433.92e6 --duration 60s --output station1/ --config north.yaml
+./argus-collector -D SOUTH001 --frequency 433.92e6 --duration 60s --output station2/ --config south.yaml  
+./argus-collector -D EAST0001 --frequency 433.92e6 --duration 60s --output station3/ --config east.yaml
+
+# 2. Process for transmitter location (automatically synchronized)
+./argus-processor --input "station*/argus-*_*.dat" --verbose
+
+# 3. View results in Google Earth
+# Opens: ./tdoa-results/tdoa_YYYYMMDD_HHMMSS_433920000Hz_heatmap.kml
+```
+
+#### Command Line Options
+
+- `--input`, `-i`: Input file pattern (e.g., "argus-?_*.dat") [REQUIRED]
+- `--output-format`, `-f`: Output format (geojson, kml, csv) [default: kml]
+- `--output`, `-o`: Output directory [default: ./tdoa-results]
+- `--algorithm`, `-a`: TDOA algorithm (basic, weighted, kalman) [default: basic]
+- `--confidence`, `-c`: Minimum confidence threshold (0.0-1.0) [default: 0.5]
+- `--max-distance`, `-d`: Maximum expected transmitter distance (km) [default: 50]
+- `--verbose`, `-v`: Enable detailed progress reporting
+- `--dry-run`: Show what would be processed without doing it
+
+#### Output Formats
+
+**KML (Google Earth)** - Default format for immediate visualization:
+- Transmitter location with styled markers
+- Confidence circle showing error bounds
+- Receiver station positions and TDOA baselines
+- Compatible with Google Earth and other KML viewers
+
+**GeoJSON (Web Mapping)** - For web applications and GIS:
+- Compatible with Leaflet, Mapbox, OpenLayers
+- Includes probability heatmap points
+- Receiver positions and measurement data
+
+**CSV (Analysis)** - For spreadsheet analysis:
+- Receiver information and TDOA measurements
+- Heatmap data points with coordinates and probabilities
+- Processing metadata in header comments
+
+#### File Naming
+
+Output files are automatically named based on processing parameters:
+```
+tdoa_YYYYMMDD_HHMMSS_FrequencyHz_heatmap.extension
+```
+
+Example: `tdoa_20250802_143022_433920000Hz_heatmap.kml`
+
+#### Requirements for TDOA Processing
+
+- **Minimum 3 synchronized data files** from different receiver locations
+- **Same frequency and sample rate** across all files
+- **GPS coordinates recorded** for each receiver station
+- **Time synchronization** within 1 second between collections
+- **Different receiver locations** (minimum 10 meters apart)
+
+#### Advanced Processing Examples
+
+```bash
+# High-precision analysis with strict confidence
+./argus-processor --input "precision/*.dat" --confidence 0.8 --algorithm weighted --verbose
+
+# Wide-area search with permissive settings
+./argus-processor --input "stations/*.dat" --confidence 0.2 --max-distance 100
+
+# Export all formats for comprehensive analysis
+./argus-processor --input "data/*.dat" --output-format kml --output ./kml-results
+./argus-processor --input "data/*.dat" --output-format geojson --output ./web-results  
+./argus-processor --input "data/*.dat" --output-format csv --output ./analysis-results
+
+# Development and testing
+./argus-processor --input "test/*.dat" --dry-run --verbose
+```
+
+#### Performance and Progress Output
+
+The processor provides detailed progress reporting during file loading and correlation:
+
+```
+📊 Loading and validating 3 data files...
+   📁 Loading argus-NORTH001_1754061697.dat (856.2 MB) (1/3)...
+      📊 Reading header... ✅ Complete
+      📊 Reading 50000000 samples...
+         Progress: 10%
+         Progress: 20%
+         ...
+         Progress: 100%
+      ✅ Loaded 50000000 samples
+
+⚙️ Performing cross-correlation analysis...
+   🔗 Correlating R1 ↔ R2 (1/3)...
+      ✅ Δt=245.1ns, Δd=73.4m, confidence=0.623
+```
+
+For complete usage documentation and troubleshooting, see: [argus-processor-README.md](argus-processor-README.md)
 
 ### Programmatic File Reading
 

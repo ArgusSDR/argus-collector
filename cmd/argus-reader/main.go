@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -19,11 +20,9 @@ import (
 
 var (
 	showSamples        bool
-	sampleLimit        int
 	showStats          bool
 	outputFormat       string
 	showHex            bool
-	hexLimit           int
 	showGraph          bool
 	graphWidth         int
 	graphHeight        int
@@ -48,8 +47,8 @@ var rootCmd = &cobra.Command{
 Useful for analyzing collected RF data and verifying collection parameters.
 
 Display modes:
-  --samples    Show decoded IQ sample values (magnitude, phase)
-  --hex        Show raw hexadecimal dump of sample data bytes
+  --samples    Show all decoded IQ sample values (magnitude, phase)
+  --hex        Show complete raw hexadecimal dump of sample data bytes
   --stats      Show statistical analysis of sample data
   --graph      Generate ASCII graph of signal magnitude over time`,
 	Args: cobra.MaximumNArgs(1),
@@ -76,12 +75,10 @@ Display modes:
 
 func init() {
 	rootCmd.Flags().BoolVar(&showVersion, "version", false, "show version information")
-	rootCmd.Flags().BoolVarP(&showSamples, "samples", "s", false, "display IQ sample data")
-	rootCmd.Flags().IntVarP(&sampleLimit, "limit", "l", 10, "limit number of samples to display")
+	rootCmd.Flags().BoolVarP(&showSamples, "samples", "s", false, "display all IQ sample data")
 	rootCmd.Flags().BoolVar(&showStats, "stats", false, "show statistical analysis of samples")
 	rootCmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "output format (table, json, csv)")
-	rootCmd.Flags().BoolVar(&showHex, "hex", false, "display raw sample data as hexadecimal dump")
-	rootCmd.Flags().IntVar(&hexLimit, "hex-limit", 256, "limit number of bytes to display in hex dump")
+	rootCmd.Flags().BoolVar(&showHex, "hex", false, "display all raw sample data as hexadecimal dump")
 	rootCmd.Flags().BoolVarP(&showGraph, "graph", "g", false, "generate ASCII graph of signal magnitude over time")
 	rootCmd.Flags().IntVar(&graphWidth, "graph-width", 80, "width of the ASCII graph in characters")
 	rootCmd.Flags().IntVar(&graphHeight, "graph-height", 20, "height of the ASCII graph in lines")
@@ -135,75 +132,71 @@ func displayFile(filename string, cmd *cobra.Command) error {
 	// Display sample information (using count only)
 	displaySampleInfo(int(sampleCount), metadata.SampleRate)
 
-	// Load and display sample data if requested
+	// Handle sample data display if requested
 	if showSamples || showStats || showHex || showGraph {
-		fmt.Printf("⏳ Loading sample data...\n")
-
-		// Try to read all samples, but handle truncated files gracefully
-		_, allSamples, err := readSamplesRobust(filename)
-		if err != nil {
-			return fmt.Errorf("failed to read samples: %w", err)
-		}
-
-		// If --graph-samples was not explicitly set by user, default to total samples from header
-		actualGraphSamples := graphSamples
-		if !cmd.Flags().Changed("graph-samples") {
-			// User didn't specify --graph-samples, use total samples from file header (with reasonable cap)
-			actualGraphSamples = int(sampleCount)
-			if actualGraphSamples > 10000 { // Cap at reasonable limit for performance
-				actualGraphSamples = 10000
-			}
-		}
-
+		// For samples and hex, use streaming display
 		if showSamples {
-			// Show limited samples for display
-			limitedSamples := allSamples
-			if len(allSamples) > sampleLimit {
-				limitedSamples = allSamples[:sampleLimit]
+			if err := displaySamplesStreaming(filename, metadata, int(sampleCount)); err != nil {
+				return fmt.Errorf("failed to display samples: %w", err)
 			}
-			displaySampleData(limitedSamples)
 		}
 
 		if showHex {
-			// Show hex dump of raw sample data
-			limitedSamples := allSamples
-			// Calculate how many samples we can show within byte limit
-			maxSamples := hexLimit / 8 // Each complex64 is 8 bytes (4 bytes I + 4 bytes Q)
-			if len(allSamples) > maxSamples {
-				limitedSamples = allSamples[:maxSamples]
+			if err := displayHexStreaming(filename, metadata, int(sampleCount)); err != nil {
+				return fmt.Errorf("failed to display hex dump: %w", err)
 			}
-			displayHexDump(limitedSamples)
 		}
+		
+		// For graph and stats, load samples into memory (these need all data for analysis)
+		if showGraph || showStats {
+			maxSamplesNeeded := 100000 // Default for stats
+			if showGraph {
+				actualGraphSamples := graphSamples
+				if !cmd.Flags().Changed("graph-samples") {
+					actualGraphSamples = min(int(sampleCount), 10000)
+				}
+				maxSamplesNeeded = max(maxSamplesNeeded, actualGraphSamples)
+			}
+			
+			fmt.Printf("⏳ Loading %d samples for analysis...\n", maxSamplesNeeded)
+			samples, err := readLimitedSamples(filename, maxSamplesNeeded)
+			if err != nil {
+				return fmt.Errorf("failed to read samples: %w", err)
+			}
 
-		if showGraph {
-			// Show ASCII graph of signal magnitude over time
-			graphSampleData := allSamples
-			if len(allSamples) > actualGraphSamples {
-				// Use evenly spaced samples across the entire collection
-				step := len(allSamples) / actualGraphSamples
-				graphSampleData = make([]complex64, 0, actualGraphSamples)
-				for i := 0; i < len(allSamples); i += step {
-					if len(graphSampleData) < actualGraphSamples {
-						graphSampleData = append(graphSampleData, allSamples[i])
+			if showGraph {
+				actualGraphSamples := graphSamples
+				if !cmd.Flags().Changed("graph-samples") {
+					actualGraphSamples = min(int(sampleCount), 10000)
+				}
+				
+				graphSampleData := samples
+				if len(samples) > actualGraphSamples {
+					// Use evenly spaced samples
+					step := len(samples) / actualGraphSamples
+					graphSampleData = make([]complex64, 0, actualGraphSamples)
+					for i := 0; i < len(samples); i += step {
+						if len(graphSampleData) < actualGraphSamples {
+							graphSampleData = append(graphSampleData, samples[i])
+						}
 					}
 				}
+				displayGraph(graphSampleData, metadata.SampleRate)
 			}
-			displayGraph(graphSampleData, metadata.SampleRate)
-		}
 
-		if showStats {
-			// Use subset for stats if file is very large
-			statsSamples := allSamples
-			if len(allSamples) > 100000 {
-				// Use every Nth sample for large files
-				step := len(allSamples) / 50000
-				statsSamples = make([]complex64, 0, 50000)
-				for i := 0; i < len(allSamples); i += step {
-					statsSamples = append(statsSamples, allSamples[i])
+			if showStats {
+				statsSamples := samples
+				if len(samples) > 100000 {
+					// Use every Nth sample for large datasets
+					step := len(samples) / 50000
+					statsSamples = make([]complex64, 0, 50000)
+					for i := 0; i < len(samples); i += step {
+						statsSamples = append(statsSamples, samples[i])
+					}
+					fmt.Printf("📊 Statistics calculated from %d representative samples\n", len(statsSamples))
 				}
-				fmt.Printf("📊 Statistics calculated from %d representative samples\n", len(statsSamples))
+				displayStatistics(statsSamples)
 			}
-			displayStatistics(statsSamples)
 		}
 	}
 
@@ -330,6 +323,62 @@ func readSamplesFromFile(filename string, maxSamples int) ([]complex64, error) {
 	}
 
 	return samples, nil
+}
+
+// readLimitedSamples reads only a limited number of samples from the beginning of the file
+func readLimitedSamples(filename string, maxSamples int) ([]complex64, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// Skip to after the header by reading metadata first to get header size
+	metadata, _, err := filewriter.ReadMetadata(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read metadata: %w", err)
+	}
+
+	// Seek to start of sample data (after header)
+	// Magic(5) + FileFormatVersion(2) + Frequency(8) + SampleRate(4) + CollectionTime(12) +
+	// GPS(24) + GPSTime(12) + DeviceInfoLen(1) + DeviceInfo + CollectionIDLen(1) + CollectionID + SampleCount(4)
+	headerSize := int64(5 + 2 + 8 + 4 + 12 + 24 + 12 + 1 + len(metadata.DeviceInfo) + 1 + len(metadata.CollectionID) + 4)
+	
+	_, err = file.Seek(headerSize, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to seek to sample data: %w", err)
+	}
+
+	// Read samples directly
+	samples := make([]complex64, 0, maxSamples)
+	for len(samples) < maxSamples {
+		var real, imag float32
+		if err := binary.Read(file, binary.LittleEndian, &real); err != nil {
+			break // EOF or error
+		}
+		if err := binary.Read(file, binary.LittleEndian, &imag); err != nil {
+			break // EOF or error
+		}
+		samples = append(samples, complex(real, imag))
+	}
+
+	return samples, nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// max returns the maximum of two integers  
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // parseDeviceInfo extracts device settings from the device info string
@@ -478,126 +527,173 @@ func displaySampleInfo(sampleCount int, sampleRate uint32) {
 	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
 }
 
-// displaySampleData shows the actual IQ sample values
-func displaySampleData(samples []complex64) {
-	fmt.Printf("📈 IQ Sample Data (first %d samples):\n", sampleLimit)
-	fmt.Printf("┌──────┬──────────────┬──────────────┬──────────────┬────────────┐\n")
-	fmt.Printf("│ #    │ I (Real)     │ Q (Imag)     │ Magnitude    │ Phase (°)  │\n")
-	fmt.Printf("├──────┼──────────────┼──────────────┼──────────────┼────────────┤\n")
+// displaySamplesStreaming reads and displays samples as they're read from file
+func displaySamplesStreaming(filename string, metadata *filewriter.Metadata, totalSamples int) error {
+	fmt.Printf("📈 IQ Sample Data (streaming all %d samples):\n", totalSamples)
+	fmt.Printf("┌────────┬──────────────┬──────────────┬──────────────┬────────────┐\n")
+	fmt.Printf("│ #      │ I (Real)     │ Q (Imag)     │ Magnitude    │ Phase (°)  │\n")
+	fmt.Printf("├────────┼──────────────┼──────────────┼──────────────┼────────────┤\n")
 
-	limit := sampleLimit
-	if limit > len(samples) {
-		limit = len(samples)
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// Seek to start of sample data
+	headerSize := int64(5 + 2 + 8 + 4 + 12 + 24 + 12 + 1 + len(metadata.DeviceInfo) + 1 + len(metadata.CollectionID) + 4)
+	_, err = file.Seek(headerSize, 0)
+	if err != nil {
+		return fmt.Errorf("failed to seek to sample data: %w", err)
 	}
 
-	for i := 0; i < limit; i++ {
-		sample := samples[i]
-		magnitude := math.Sqrt(float64(real(sample)*real(sample) + imag(sample)*imag(sample)))
-		phase := math.Atan2(float64(imag(sample)), float64(real(sample))) * 180 / math.Pi
+	// Stream samples and display them
+	const rad2deg = 180.0 / math.Pi
+	const batchSize = 1000 // Process in batches for better performance
+	var batch strings.Builder
+	batch.Grow(batchSize * 80) // Estimate 80 chars per row
+	
+	index := 0
+	for {
+		var real, imag float32
+		if err := binary.Read(file, binary.LittleEndian, &real); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("failed to read real part: %w", err)
+		}
+		if err := binary.Read(file, binary.LittleEndian, &imag); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("failed to read imaginary part: %w", err)
+		}
 
-		fmt.Printf("│ %-4d │ %12.6f │ %12.6f │ %12.6f │ %10.2f │\n",
-			i, real(sample), imag(sample), magnitude, phase)
+		realPart := float64(real)
+		imagPart := float64(imag)
+		magnitude := math.Sqrt(realPart*realPart + imagPart*imagPart)
+		phase := math.Atan2(imagPart, realPart) * rad2deg
+
+		batch.WriteString(fmt.Sprintf("│ %-6d │ %12.6f │ %12.6f │ %12.6f │ %10.2f │\n",
+			index, realPart, imagPart, magnitude, phase))
+		
+		index++
+		
+		// Output batch when it's full
+		if index%batchSize == 0 {
+			fmt.Print(batch.String())
+			batch.Reset()
+		}
+	}
+	
+	// Output remaining batch
+	if batch.Len() > 0 {
+		fmt.Print(batch.String())
 	}
 
-	fmt.Printf("└──────┴──────────────┴──────────────┴──────────────┴────────────┘\n")
-
-	if len(samples) > sampleLimit {
-		fmt.Printf("... (%d more samples not shown)\n", len(samples)-sampleLimit)
-	}
-	fmt.Println()
+	fmt.Printf("└────────┴──────────────┴──────────────┴──────────────┴────────────┘\n\n")
+	
+	return nil
 }
 
-// displayHexDump shows the raw bytes of sample data in hexadecimal format
-func displayHexDump(samples []complex64) {
-	if len(samples) == 0 {
-		fmt.Printf("🔍 Hex Dump: No samples to display\n\n")
-		return
-	}
-
-	// Convert complex64 samples to raw bytes
-	byteData := make([]byte, len(samples)*8) // Each complex64 is 8 bytes
-
-	for i, sample := range samples {
-		// Extract real and imaginary parts
-		realVal := real(sample)
-		imagVal := imag(sample)
-
-		// Convert to bytes using binary encoding (little-endian)
-		binary.LittleEndian.PutUint32(byteData[i*8:i*8+4], math.Float32bits(realVal))
-		binary.LittleEndian.PutUint32(byteData[i*8+4:i*8+8], math.Float32bits(imagVal))
-	}
-
-	// Limit bytes to display
-	displayBytes := byteData
-	if len(byteData) > hexLimit {
-		displayBytes = byteData[:hexLimit]
-	}
-
-	fmt.Printf("🔍 Hex Dump of Raw Sample Data (first %d bytes):\n", len(displayBytes))
+// displayHexStreaming reads and displays hex dump as samples are read from file
+func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSamples int) error {
+	totalBytes := totalSamples * 8
+	fmt.Printf("🔍 Hex Dump of Raw Sample Data (streaming all %d bytes):\n", totalBytes)
 	fmt.Printf("Each complex64 sample = 8 bytes (4-byte float I + 4-byte float Q)\n")
 	fmt.Printf("Address  | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F | ASCII\n")
 	fmt.Printf("---------|------------------------------------------------|------------------\n")
 
-	for offset := 0; offset < len(displayBytes); offset += 16 {
-		// Address column
-		fmt.Printf("%08x | ", offset)
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
 
-		// Hex bytes column
-		hexPart := ""
-		asciiPart := ""
+	// Seek to start of sample data
+	headerSize := int64(5 + 2 + 8 + 4 + 12 + 24 + 12 + 1 + len(metadata.DeviceInfo) + 1 + len(metadata.CollectionID) + 4)
+	_, err = file.Seek(headerSize, 0)
+	if err != nil {
+		return fmt.Errorf("failed to seek to sample data: %w", err)
+	}
 
+	// Read and display in 16-byte rows
+	var buffer [16]byte
+	offset := 0
+	showInterpretation := true
+	interpretCount := 0
+	
+	for {
+		n, err := file.Read(buffer[:])
+		if n == 0 {
+			break
+		}
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("failed to read data: %w", err)
+		}
+
+		// Build hex representation
+		var hexPart strings.Builder
+		var asciiPart strings.Builder
+		
 		for i := 0; i < 16; i++ {
-			if offset+i < len(displayBytes) {
-				b := displayBytes[offset+i]
-				hexPart += fmt.Sprintf("%02x ", b)
-
+			if i < n {
+				b := buffer[i]
+				hexPart.WriteString(fmt.Sprintf("%02x ", b))
+				
 				// ASCII representation
 				if b >= 32 && b <= 126 {
-					asciiPart += string(b)
+					asciiPart.WriteByte(b)
 				} else {
-					asciiPart += "."
+					asciiPart.WriteByte('.')
 				}
 			} else {
-				hexPart += "   "
-				asciiPart += " "
+				hexPart.WriteString("   ")
+				asciiPart.WriteByte(' ')
 			}
 		}
 
-		fmt.Printf("%-48s | %s\n", hexPart, asciiPart)
-	}
-
-	fmt.Println()
-
-	if len(byteData) > hexLimit {
-		fmt.Printf("... (%d more bytes not shown, use --hex-limit to adjust)\n", len(byteData)-hexLimit)
-	}
-
-	// Show sample interpretation for first few samples
-	if len(samples) > 0 {
-		fmt.Printf("Sample Interpretation (first few samples):\n")
-		interpretLimit := 4
-		if len(samples) < interpretLimit {
-			interpretLimit = len(samples)
+		fmt.Printf("%08x | %-47s | %s\n", offset, hexPart.String(), asciiPart.String())
+		
+		// Show sample interpretation for first few complete samples
+		if showInterpretation && offset%8 == 0 && n >= 8 && interpretCount < 4 {
+			// We have at least one complete sample, interpret it
+			for i := 0; i+7 < n && interpretCount < 4; i += 8 {
+				// Extract real and imaginary parts from bytes
+				realBits := binary.LittleEndian.Uint32(buffer[i:i+4])
+				imagBits := binary.LittleEndian.Uint32(buffer[i+4:i+8])
+				
+				realVal := math.Float32frombits(realBits)
+				imagVal := math.Float32frombits(imagBits)
+				
+				sampleNum := (offset + i) / 8
+				if interpretCount == 0 {
+					fmt.Printf("\nSample Interpretation (first few samples):\n")
+				}
+				
+				fmt.Printf("Sample %d: I=%f Q=%f | I bytes: %02x %02x %02x %02x | Q bytes: %02x %02x %02x %02x\n",
+					sampleNum, realVal, imagVal,
+					buffer[i], buffer[i+1], buffer[i+2], buffer[i+3],
+					buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7])
+				
+				interpretCount++
+			}
+			
+			if interpretCount >= 4 {
+				showInterpretation = false
+				fmt.Println()
+			}
 		}
-
-		for i := 0; i < interpretLimit; i++ {
-			sample := samples[i]
-			realVal := real(sample)
-			imagVal := imag(sample)
-
-			// Convert to bytes for display
-			realBits := math.Float32bits(realVal)
-			imagBits := math.Float32bits(imagVal)
-
-			fmt.Printf("Sample %d: I=%f Q=%f | ", i, realVal, imagVal)
-			fmt.Printf("I bytes: %02x %02x %02x %02x | ",
-				byte(realBits), byte(realBits>>8), byte(realBits>>16), byte(realBits>>24))
-			fmt.Printf("Q bytes: %02x %02x %02x %02x\n",
-				byte(imagBits), byte(imagBits>>8), byte(imagBits>>16), byte(imagBits>>24))
+		
+		offset += n
+		
+		if err == io.EOF {
+			break
 		}
 	}
-
+	
 	fmt.Println()
+	return nil
 }
 
 // displayGraph creates an ASCII graph of signal magnitude over time
@@ -738,6 +834,7 @@ func displayStatistics(samples []complex64) {
 	var sumI, sumQ, sumMag float64
 	var minMag, maxMag float64 = math.Inf(1), math.Inf(-1)
 	var sumPower float64
+	var magnitudes []float64
 
 	for _, sample := range samples {
 		i := float64(real(sample))
@@ -749,6 +846,7 @@ func displayStatistics(samples []complex64) {
 		sumQ += q
 		sumMag += mag
 		sumPower += power
+		magnitudes = append(magnitudes, mag)
 
 		if mag < minMag {
 			minMag = mag
@@ -775,6 +873,45 @@ func displayStatistics(samples []complex64) {
 	varI /= count
 	varQ /= count
 
+	// Calculate signal strength metrics
+	rmsAmplitude := math.Sqrt(meanPower)
+	signalStrengthDbm := 10*math.Log10(meanPower) - 30 // Convert to dBm (assuming 50-ohm impedance)
+	
+	// Calculate noise floor estimation using lowest 10% of magnitude samples
+	// Sort magnitudes to find noise floor
+	sortedMags := make([]float64, len(magnitudes))
+	copy(sortedMags, magnitudes)
+	
+	// Simple bubble sort for the bottom 10%
+	n := len(sortedMags)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if sortedMags[j] > sortedMags[j+1] {
+				sortedMags[j], sortedMags[j+1] = sortedMags[j+1], sortedMags[j]
+			}
+		}
+	}
+	
+	// Use bottom 10% for noise floor estimation
+	noiseFloorSamples := int(float64(len(sortedMags)) * 0.1)
+	if noiseFloorSamples < 10 {
+		noiseFloorSamples = 10
+	}
+	if noiseFloorSamples > len(sortedMags) {
+		noiseFloorSamples = len(sortedMags)
+	}
+	
+	var noiseFloorSum float64
+	for i := 0; i < noiseFloorSamples; i++ {
+		noiseFloorSum += sortedMags[i] * sortedMags[i] // Convert to power
+	}
+	noiseFloorPower := noiseFloorSum / float64(noiseFloorSamples)
+	noiseFloorDb := 10 * math.Log10(noiseFloorPower)
+	
+	// Calculate Signal-to-Noise Ratio
+	signalPowerDb := 10 * math.Log10(meanPower)
+	snrDb := signalPowerDb - noiseFloorDb
+
 	fmt.Printf("📊 Statistical Analysis:\n")
 	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
 	fmt.Printf("│ Statistic               │ Value                                   │\n")
@@ -787,8 +924,14 @@ func displayStatistics(samples []complex64) {
 	fmt.Printf("│ Mean Magnitude          │ %12.6f                           │\n", meanMag)
 	fmt.Printf("│ Min Magnitude           │ %12.6f                           │\n", minMag)
 	fmt.Printf("│ Max Magnitude           │ %12.6f                           │\n", maxMag)
+	fmt.Printf("│ RMS Amplitude           │ %12.6f                           │\n", rmsAmplitude)
+	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
 	fmt.Printf("│ Mean Power              │ %12.6f                           │\n", meanPower)
-	fmt.Printf("│ Power (dB)              │ %12.2f dB                        │\n", 10*math.Log10(meanPower))
+	fmt.Printf("│ Signal Power (dB)       │ %12.2f dB                        │\n", signalPowerDb)
+	fmt.Printf("│ Signal Strength (dBm)   │ %12.2f dBm                       │\n", signalStrengthDbm)
+	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
+	fmt.Printf("│ Noise Floor (dB)        │ %12.2f dB                        │\n", noiseFloorDb)
+	fmt.Printf("│ Signal-to-Noise Ratio   │ %12.2f dB                        │\n", snrDb)
 	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
 }
 
