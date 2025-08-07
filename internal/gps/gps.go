@@ -47,11 +47,13 @@ type NMEASerial struct {
 
 // GPSDClient implements GPS via gpsd daemon
 type GPSDClient struct {
-	client   *gpsd.Session
-	position Position
-	fixChan  chan Position
-	host     string
-	port     string
+	client     *gpsd.Session
+	position   Position
+	fixChan    chan Position
+	host       string
+	port       string
+	satCount   int  // Track satellite count separately from position
+	mu         sync.RWMutex  // Protect position and satCount from concurrent access
 }
 
 // NewGPS creates a GPS instance with NMEA serial interface
@@ -457,16 +459,18 @@ func (g *GPSDClient) Start() error {
 
 		// Only process valid fixes
 		if fixQuality > 0 && tpv.Lat != 0 && tpv.Lon != 0 {
+			g.mu.Lock()
 			pos := Position{
 				Latitude:   tpv.Lat,
 				Longitude:  tpv.Lon,
 				Altitude:   tpv.Alt,
 				Timestamp:  tpv.Time,
 				FixQuality: fixQuality,
-				Satellites: g.position.Satellites, // Preserve existing satellite count from SKY reports
+				Satellites: g.satCount, // Use separate satellite count field
 			}
 
 			g.position = pos
+			g.mu.Unlock()
 
 			select {
 			case g.fixChan <- pos:
@@ -482,15 +486,21 @@ func (g *GPSDClient) Start() error {
 			return
 		}
 
-		// Update satellite count - preserve existing position data if available
-		satCount := len(sky.Satellites)
-		if g.position.FixQuality > 0 {
-			// Update existing valid position with new satellite count
-			g.position.Satellites = satCount
-		} else {
-			// Store satellite count for when position becomes available
-			g.position.Satellites = satCount
+		g.mu.Lock()
+		// Count only satellites used in the fix
+		usedSatellites := 0
+		for _, sat := range sky.Satellites {
+			if sat.Used {
+				usedSatellites++
+			}
 		}
+		g.satCount = usedSatellites
+		
+		// If we have a valid position, update it with new satellite count
+		if g.position.FixQuality > 0 {
+			g.position.Satellites = g.satCount
+		}
+		g.mu.Unlock()
 	})
 
 	// Start watching
@@ -507,6 +517,18 @@ func (g *GPSDClient) WaitForFix(timeout time.Duration) (*Position, error) {
 		select {
 		case pos := <-g.fixChan:
 			if pos.FixQuality > 0 {
+				// Wait a brief moment for satellite data to arrive if it hasn't yet
+				if pos.Satellites == 0 {
+					time.Sleep(500 * time.Millisecond)
+					// Get the latest position which might have satellite data now
+					g.mu.RLock()
+					if g.position.FixQuality > 0 {
+						updatedPos := g.position
+						g.mu.RUnlock()
+						return &updatedPos, nil
+					}
+					g.mu.RUnlock()
+				}
 				return &pos, nil
 			}
 		case <-timer.C:
@@ -516,6 +538,9 @@ func (g *GPSDClient) WaitForFix(timeout time.Duration) (*Position, error) {
 }
 
 func (g *GPSDClient) GetCurrentPosition() (*Position, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	
 	if g.position.FixQuality == 0 {
 		return nil, fmt.Errorf("no GPS fix available")
 	}
@@ -525,11 +550,17 @@ func (g *GPSDClient) GetCurrentPosition() (*Position, error) {
 }
 
 func (g *GPSDClient) IsFixValid() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	return g.position.FixQuality > 0
 }
 
 func (g *GPSDClient) GetFixQualityString() string {
-	switch g.position.FixQuality {
+	g.mu.RLock()
+	quality := g.position.FixQuality
+	g.mu.RUnlock()
+	
+	switch quality {
 	case 0:
 		return "Invalid"
 	case 1:

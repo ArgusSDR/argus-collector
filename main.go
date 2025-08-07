@@ -276,9 +276,10 @@ func runCollector(cmd *cobra.Command) error {
 	}
 	defer c.Close()
 
-	// Enable GPS debug mode if verbose logging is enabled
+	// Enable debug modes if verbose logging is enabled
 	if viper.GetBool("verbose") {
 		c.SetGPSDebug(true)
+		c.SetRTLSDRVerbose(true)
 	}
 
 	// Check for cancellation before GPS fix
@@ -305,6 +306,9 @@ func runCollector(cmd *cobra.Command) error {
 		return fmt.Errorf("collection failed: %w", err)
 	}
 
+	// Report final AGC result if AGC was used
+	c.ReportAGCResult()
+	
 	fmt.Printf("Collection completed successfully.\n")
 	return nil
 }

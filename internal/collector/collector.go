@@ -187,7 +187,6 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 
 		waitDuration := time.Until(startTime)
 		if waitDuration > 0 {
-			fmt.Printf("Waiting %.3f seconds for synchronized start...\n", waitDuration.Seconds())
 
 			// Wait for sync start time or context cancellation
 			select {
@@ -400,6 +399,20 @@ func (c *Collector) Stop() {
 func (c *Collector) SetGPSDebug(debug bool) {
 	if c.gps != nil {
 		c.gps.SetDebug(debug)
+	}
+}
+
+// SetRTLSDRVerbose enables or disables RTL-SDR verbose logging
+func (c *Collector) SetRTLSDRVerbose(verbose bool) {
+	if c.rtlsdr != nil {
+		c.rtlsdr.SetVerbose(verbose)
+	}
+}
+
+// ReportAGCResult reports the final AGC gain if AGC was used
+func (c *Collector) ReportAGCResult() {
+	if c.rtlsdr != nil {
+		c.rtlsdr.ReportAGCResult()
 	}
 }
 

@@ -20,6 +20,10 @@ type Device struct {
 	// Software AGC state (stub)
 	agcEnabled     bool    // Software AGC enabled (stub)
 	agcTargetPower float64 // Target signal power (stub)
+	agcFinalGain   float64 // Final AGC gain (stub)
+	
+	// Logging control (stub)
+	verbose        bool    // Enable verbose logging (stub)
 }
 
 // IQSample represents a stub IQ sample structure (matches real implementation)
@@ -37,6 +41,7 @@ func NewDevice(deviceIndex int) (*Device, error) {
 		gainMode:       "manual",  // Default to manual gain
 		biasTee:        false,     // Default bias tee off
 		agcTargetPower: 0.7,       // Target 70% of full scale
+		agcFinalGain:   20.7,      // Default final gain
 	}, nil
 }
 
@@ -49,6 +54,7 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 		gainMode:       "manual",  // Default to manual gain
 		biasTee:        false,     // Default bias tee off
 		agcTargetPower: 0.7,       // Target 70% of full scale
+		agcFinalGain:   20.7,      // Default final gain
 	}, nil
 }
 
@@ -183,7 +189,10 @@ func (d *Device) SetGainMode(mode string) error {
 	case "auto":
 		d.gainMode = mode
 		d.agcEnabled = true
-		fmt.Printf("Software AGC enabled (stub mode - target: %.1f%%)\n", d.agcTargetPower*100)
+		d.agcFinalGain = 24.8 // Simulate AGC final gain for stub
+		if d.verbose {
+			fmt.Printf("Software AGC enabled (stub mode - target: %.1f%%, simulating gain adjustments)\n", d.agcTargetPower*100)
+		}
 		return nil
 	case "manual":
 		d.gainMode = mode
@@ -211,6 +220,23 @@ func (d *Device) GetGain() float64 {
 // GetGainMode stub method - returns current gain mode
 func (d *Device) GetGainMode() string {
 	return d.gainMode
+}
+
+// SetVerbose stub method - enables or disables verbose logging
+func (d *Device) SetVerbose(verbose bool) {
+	d.verbose = verbose
+}
+
+// GetFinalAGCGain stub method - returns the final gain value determined by AGC
+func (d *Device) GetFinalAGCGain() float64 {
+	return d.agcFinalGain
+}
+
+// ReportAGCResult stub method - reports the final AGC result
+func (d *Device) ReportAGCResult() {
+	if d.agcEnabled && d.gainMode == "auto" {
+		fmt.Printf("AGC converged to %.1f dB gain\n", d.agcFinalGain)
+	}
 }
 
 // SetBiasTee stub method - stores bias tee setting

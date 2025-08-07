@@ -28,6 +28,10 @@ type Device struct {
 	agcGainStep    float64     // Gain adjustment step size in dB
 	agcMaxGain     float64     // Maximum allowed gain in dB
 	agcMinGain     float64     // Minimum allowed gain in dB
+	agcFinalGain   float64     // Final AGC gain (for summary reporting)
+	
+	// Logging control
+	verbose        bool        // Enable verbose logging
 }
 
 // IQSample represents a collected set of IQ samples with timestamp
@@ -275,8 +279,11 @@ func (d *Device) SetGainMode(mode string) error {
 		}
 		d.gainMode = "auto"
 		d.agcEnabled = true
-		fmt.Printf("Software AGC enabled (target: %.1f%%, range: %.1f-%.1f dB, step: %.1f dB)\n", 
-			d.agcTargetPower*100, d.agcMinGain, d.agcMaxGain, d.agcGainStep)
+		d.agcFinalGain = initialGain // Initialize final gain tracking
+		if d.verbose {
+			fmt.Printf("Software AGC enabled (target: %.1f%%, range: %.1f-%.1f dB, step: %.1f dB)\n", 
+				d.agcTargetPower*100, d.agcMinGain, d.agcMaxGain, d.agcGainStep)
+		}
 	case "manual":
 		// Disable software AGC and enable manual gain control
 		d.agcEnabled = false
@@ -308,6 +315,23 @@ func (d *Device) GetGain() float64 {
 // GetGainMode returns the current gain mode
 func (d *Device) GetGainMode() string {
 	return d.gainMode
+}
+
+// SetVerbose enables or disables verbose logging
+func (d *Device) SetVerbose(verbose bool) {
+	d.verbose = verbose
+}
+
+// GetFinalAGCGain returns the final gain value determined by AGC
+func (d *Device) GetFinalAGCGain() float64 {
+	return d.agcFinalGain
+}
+
+// ReportAGCResult reports the final AGC result (only when AGC was used)
+func (d *Device) ReportAGCResult() {
+	if d.agcEnabled && d.gainMode == "auto" {
+		fmt.Printf("AGC converged to %.1f dB gain\n", d.agcFinalGain)
+	}
 }
 
 // calculateSignalPower calculates the RMS power of IQ samples
@@ -377,8 +401,11 @@ func (d *Device) adjustGainAGC(samples []complex64) error {
 		if err := d.SetGain(newGain); err != nil {
 			return fmt.Errorf("AGC gain adjustment failed: %w", err)
 		}
-		fmt.Printf("AGC: Power=%.3f (target=%.3f), Gain: %.1f→%.1f dB\n", 
-			currentPower, d.agcTargetPower, currentGain, newGain)
+		d.agcFinalGain = newGain // Track final gain for summary
+		if d.verbose {
+			fmt.Printf("AGC: Power=%.3f (target=%.3f), Gain: %.1f→%.1f dB\n", 
+				currentPower, d.agcTargetPower, currentGain, newGain)
+		}
 	}
 	
 	return nil
