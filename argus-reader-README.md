@@ -191,6 +191,56 @@ Legend: * = data point, # = multiple points, Time →
    Dynamic Range: 58.12 dB
 ```
 
+### Real-World Signal Analysis Example
+
+Here's an example showing a captured NOAA Weather Radio transmission at 162.400 MHz:
+
+```
+📈 Signal Magnitude Over Time:
+Samples: 5000 | Duration: 2.441 seconds | Sample Rate: 2.048 MSps
+Magnitude Range: 0.0055 to 0.6672
+
+Magnitude
+  0.6672 |                                                    *                           |
+  0.6324 |                                                              *                 |
+  0.5975 |                      *                                                    *    |
+  0.5627 |                     *     *                              *          *          |
+  0.5279 |      *                 *  *                          *                 *       |
+  0.4931 |  *  ** *  **      *     *  *     *  **      *                              *   |
+  0.4583 |  *    #            *    *                              ***       #     **      |
+  0.4234 |  *   * **    **  *    *  *    *              #       *          *  * *    * *  |
+  0.3886 |    *  #****# * * *   **  *     *      ** *** *       *   **    * *  * #  **  # |
+  0.3538 | *  #    *  *#  *#* #    *     * *#**#   **     * *#    *  ** #   *  #*     * * |
+  0.3190 |   *    # ** ***#**   ** * * #     **   * *     *   *    # *#*    #* #* *  #*#* |
+  0.2841 |  # * *  **#* #   ** ** ******* #***** **  #   *#  # * ##****    #    * *  *#*# |
+  0.2493 | **# * # ** **  *#** #*# * * #*** **#*#* ** **#*** #**  **# ##  * *##* *  ***   |
+  0.2145 | #* #***# **#   **###   #*# ##*** *  *####*##* * *# *# *####**##*# #* ##**#*#*  |
+  0.1797 |* ### # ##*#####  *#*#**###**###*#*#*##* ####*##**# # ##**### #######*##*#*##*# |
+  0.1448 |######## ###############################################*#*#################### |
+  0.1100 |############################################################################### |
+  0.0752 |############################################################################### |
+  0.0404 |############################################################################### |
+  0.0055 |# *####*## #######*########### ######### *###########*#*#####*### # ######*###**|
+         +--------------------------------------------------------------------------------+
+         0                                     0.002s                                  0.005s
+
+Legend: * = data point, # = multiple points, Time →
+
+📊 Signal Analysis:
+   Average Magnitude: 0.2847
+   Peak Magnitude: 0.6672
+   Signal Strength: -3.52 dB
+   Signal-to-Noise Ratio: 8.45 dB
+   Noise Floor: -12.1 dB
+   Dynamic Range: 24.23 dB
+```
+
+**Analysis Notes:**
+- **Signal Pattern**: Shows strong NOAA weather transmission with clear amplitude modulation
+- **High SNR**: 8.45 dB indicates good signal quality suitable for TDoA processing
+- **Consistent Baseline**: Low noise floor (-12.1 dB) demonstrates effective AGC operation
+- **Dynamic Range**: 24.23 dB provides good signal resolution for correlation analysis
+
 > **📖 Detailed Graph Documentation**: See [GRAPH_FEATURE.md](GRAPH_FEATURE.md) for comprehensive usage examples, interpretation guide, and advanced features.
 
 ### Sample Data Analysis
@@ -243,7 +293,18 @@ Legend: * = data point, # = multiple points, Time →
 │ Max Magnitude           │     1.987654                           │
 │ Mean Power              │     0.024567                           │
 │ Power (dB)              │       -16.10 dB                        │
+├─────────────────────────┼─────────────────────────────────────────┤
+│ Signal Strength         │        -3.52 dB                        │
+│ Signal Power (dBm)      │       -73.52 dBm                       │
+│ Signal-to-Noise Ratio   │         8.45 dB                        │
+│ Noise Floor             │       -12.1 dB                         │
+│ Dynamic Range           │        24.23 dB                        │
 └─────────────────────────┴─────────────────────────────────────────┘
+
+📈 Signal Quality Assessment:
+   SNR Quality: Good (8.45 dB > 6 dB threshold)
+   Suitable for TDoA processing: Yes
+   Recommended for correlation analysis: Yes
 ```
 
 ## Performance

@@ -44,20 +44,20 @@ make build-all-tools
 ### Basic TDoA Workflow
 
 ```bash
-# 1. Collect synchronized data from multiple stations
+# 1. Collect synchronized data from multiple stations (with AGC optimization)
 ./argus-collector --frequency=162400000 --duration=30s \
-  --collection-id=station1 --gps-mode=nmea --gps-port=/dev/ttyACM0
+  --collection-id=station1 --gps-mode=nmea --gps-port=/dev/ttyACM0 --gain-mode=auto
 
 ./argus-collector --frequency=162400000 --duration=30s \
-  --collection-id=station2 --gps-mode=nmea --gps-port=/dev/ttyACM0
+  --collection-id=station2 --gps-mode=gpsd --gpsd-host=localhost --gain-mode=auto
 
 ./argus-collector --frequency=162400000 --duration=30s \
-  --collection-id=station3 --gps-mode=nmea --gps-port=/dev/ttyACM0
+  --collection-id=station3 --gps-mode=manual --latitude=35.533 --longitude=-97.621 --gain-mode=manual --gain=28.1
 
-# 2. Validate data quality
-./argus-reader --stats station1_data.dat
-./argus-reader --stats station2_data.dat  
-./argus-reader --stats station3_data.dat
+# 2. Validate data quality with enhanced signal analysis  
+./argus-reader --stats --graph station1_data.dat
+./argus-reader --stats --graph station2_data.dat  
+./argus-reader --stats --graph station3_data.dat
 
 # 3. Process for transmitter location
 ./argus-processor --input "argus-*_timestamp.dat" --verbose
@@ -65,14 +65,21 @@ make build-all-tools
 
 ## Key Features
 
+### Enhanced v0.2.0-beta Features
+- **Software-based AGC** - Intelligent automatic gain control for optimal signal capture
+- **Improved GPSD integration** - Accurate satellite count reporting (satellites used in fix)
+- **Advanced signal analysis** - SNR calculation, noise floor analysis, and signal strength metrics
+- **Verbose logging control** - Detailed AGC and GPS debugging with --verbose flag
+
 ### Synchronized Collection
 - **Nanosecond GPS timing** for multi-station coordination
 - **Automatic epoch synchronization** across distributed receivers
 - **Sub-sample timing accuracy** essential for TDoA processing
 
 ### Signal Analysis
-- **Real-time streaming display** of IQ samples and hex dumps
-- **Comprehensive statistics** including SNR and signal strength
+- **Real-time streaming display** of IQ samples and hex dumps  
+- **Comprehensive statistics** including SNR, signal strength, and noise floor analysis
+- **Advanced signal visualization** with ASCII graphs and quality metrics
 - **Quality validation** with automated analysis recommendations
 
 ### TDoA Processing  
@@ -212,12 +219,16 @@ collection:
   duration: "30s"
 
 rtlsdr:
-  gain: 20.7
+  gain_mode: "auto"    # Enable AGC (or "manual" for fixed gain)
+  gain: 20.7           # Used only in manual mode
   bias_tee: false
   
 gps:
-  mode: "nmea"
+  mode: "nmea"         # nmea, gpsd, or manual
   port: "/dev/ttyACM0"
+
+logging:
+  level: "info"        # Use "debug" or --verbose for AGC details
 ```
 
 ### Multi-Station Setup

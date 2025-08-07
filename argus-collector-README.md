@@ -24,7 +24,8 @@ The collector provides:
 ### RTL-SDR Control
 - **Full Hardware Configuration**: Frequency, sample rate, gain control
 - **Bias Tee Support**: Power external LNAs via antenna port
-- **Automatic Gain Control**: AGC or manual gain settings
+- **Software-based AGC**: Intelligent automatic gain control with configurable target levels
+- **Manual Gain Control**: Precise gain settings for consistent multi-station operation
 - **Device Detection**: Automatic RTL-SDR enumeration and selection
 
 ### Data Management
@@ -78,13 +79,17 @@ The collector provides:
 ```bash
 # Basic RF parameters
 --sample-rate=2048000    # Sample rate in Hz (default: 2.048 MSps)
---gain=20.7              # Gain in dB (0-50, or 'auto' for AGC)
+--gain=20.7              # Manual gain in dB (0-50)
+--gain-mode=auto         # Automatic gain control (auto|manual)
 --frequency-correction=0 # PPM correction for crystal accuracy
 
 # Hardware control  
 --device-index=0         # RTL-SDR device index (if multiple devices)
 --bias-tee              # Enable bias tee for LNA power
 --direct-sampling       # Enable direct sampling mode
+
+# Advanced options
+--verbose               # Enable detailed logging (AGC, GPS debug)
 ```
 
 ### Collection Control
@@ -127,6 +132,84 @@ Usage:
 ./argus-collector --config=config.yaml
 ```
 
+## Automatic Gain Control (AGC)
+
+The argus-collector includes sophisticated software-based AGC for optimal signal capture across varying conditions.
+
+### AGC Operation
+
+```bash
+# Enable automatic gain control
+./argus-collector --gain-mode=auto --frequency=162400000 --duration=30s
+
+# Manual gain control (recommended for multi-station TDoA)
+./argus-collector --gain-mode=manual --gain=20.7 --frequency=162400000 --duration=30s
+
+# AGC with verbose monitoring
+./argus-collector --gain-mode=auto --verbose --frequency=162400000 --duration=10s
+```
+
+### AGC Configuration
+
+The AGC system can be fine-tuned via configuration file:
+
+```yaml
+# config.yaml
+rtlsdr:
+  gain_mode: "auto"        # Enable AGC
+  # gain: 20.7             # Not used in auto mode
+  
+# AGC operates with these built-in parameters:
+# - Target Power: 70% of full scale
+# - Gain Range: 0.0 to 49.6 dB
+# - Adjustment Step: 3.0 dB
+# - Update Rate: Per collection period
+```
+
+### AGC Output Example
+
+```bash
+$ ./argus-collector --gain-mode=auto --duration=10s --frequency=162400000 --verbose
+
+GPS fix acquired: 35.533210, -97.621322 (quality: GPS fix (via gpsd), satellites: 7)
+Starting collection (ID: argus-0_1754539847, Duration: 10s)
+Device: RTL-SDR Blog V3 (freq: 162400000 Hz, rate: 2048000 Hz, gain: 20.7 dB (auto), bias-tee: off)
+AGC: Power=0.086 (target=0.700), Gain: 20.7→23.7 dB
+AGC: Power=0.345 (target=0.700), Gain: 23.7→26.2 dB
+AGC: Power=0.521 (target=0.700), Gain: 26.2→27.8 dB
+AGC: Power=0.683 (target=0.700), Gain: 27.8→28.1 dB
+AGC: Power=0.697 (target=0.700), Gain: 28.1→28.1 dB
+Collection saved to: data/argus-0_1754539847.dat
+Samples collected: 20480000
+AGC converged to 28.1 dB gain
+```
+
+### AGC vs Manual Gain
+
+| Mode | Best For | Advantages | Disadvantages |
+|------|----------|------------|---------------|
+| **AGC (auto)** | Single station, varying conditions | Adapts to signal levels, maximizes dynamic range | Gain varies between collections |
+| **Manual** | Multi-station TDoA | Consistent gain across stations, repeatable results | Requires manual optimization |
+
+### TDoA Deployment Recommendations
+
+For **multi-station TDoA** deployments:
+
+1. **Use Manual Gain**: Ensures consistent gain across all stations
+2. **Test with AGC First**: Determine optimal gain for each location
+3. **Apply Consistent Settings**: Use the AGC-determined gain in manual mode
+
+```bash
+# Step 1: Determine optimal gain at each station using AGC
+./argus-collector --gain-mode=auto --duration=30s --frequency=162400000 --verbose
+
+# Step 2: Note the final AGC gain (e.g., 28.1 dB)
+# AGC converged to 28.1 dB gain
+
+# Step 3: Use manual gain for actual TDoA collections
+./argus-collector --gain-mode=manual --gain=28.1 --duration=30s --frequency=162400000
+```
+
 ## GPS Integration
 
 ### NMEA Serial Connection
@@ -146,10 +229,16 @@ For systems running gpsd daemon:
 ./argus-collector --gps-mode=gpsd --gpsd-host=localhost
 ```
 
+**Example Output:**
+```bash
+GPS fix acquired: 35.533210, -97.621322 (quality: GPS fix (via gpsd), satellites: 7)
+```
+
 **Advantages:**
 - Shared GPS access across multiple applications
 - Network-based GPS sharing
 - Enhanced GPS status monitoring
+- Accurate satellite count reporting (shows satellites used in position fix)
 
 ### Manual Mode (Testing)
 For testing without GPS hardware:
