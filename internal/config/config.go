@@ -46,6 +46,7 @@ type CollectionConfig struct {
 	FilePrefix   string        `yaml:"file_prefix"`   // Prefix for output filenames
 	CollectionID string        `yaml:"collection_id"` // Collection identifier for filename
 	SyncedStart  bool          `yaml:"synced_start"`  // Enable synchronized start timing
+	StartTime    int64         `yaml:"start_time"`    // Exact epoch timestamp for collection start
 }
 
 // LoggingConfig contains logging configuration parameters

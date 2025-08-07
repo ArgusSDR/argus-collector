@@ -35,6 +35,7 @@ var (
 	gpsdPort        string  // GPSD port (for gpsd mode)
 	verbose         bool    // Enable verbose logging
 	syncedStart     bool    // Enable synchronized start timing
+	startTime       int64   // Exact epoch timestamp for collection start
 	latitude        float64 // Manual latitude in decimal degrees
 	longitude       float64 // Manual longitude in decimal degrees
 	altitude        float64 // Manual altitude in meters
@@ -101,6 +102,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&duration, "duration", "d", "60s", "collection duration")
 	rootCmd.Flags().StringVarP(&output, "output", "o", "./data", "output directory")
 	rootCmd.Flags().BoolVar(&syncedStart, "synced-start", true, "enable delayed/synchronized start time (true|false)")
+	rootCmd.Flags().Int64Var(&startTime, "start-time", 0, "exact epoch timestamp for collection start (overrides synced-start)")
 
 	// GPS configuration options
 	rootCmd.Flags().StringVar(&gpsMode, "gps-mode", "nmea", "GPS mode: nmea, gpsd, or manual")
@@ -135,6 +137,7 @@ func init() {
 	viper.BindPFlag("collection.duration", rootCmd.Flags().Lookup("duration"))
 	viper.BindPFlag("collection.output_dir", rootCmd.Flags().Lookup("output"))
 	viper.BindPFlag("collection.synced_start", rootCmd.Flags().Lookup("synced-start"))
+	viper.BindPFlag("collection.start_time", rootCmd.Flags().Lookup("start-time"))
 	viper.BindPFlag("gps.mode", rootCmd.Flags().Lookup("gps-mode"))
 	viper.BindPFlag("gps.port", rootCmd.Flags().Lookup("gps-port"))
 	viper.BindPFlag("gps.gpsd_host", rootCmd.Flags().Lookup("gpsd-host"))
@@ -400,6 +403,9 @@ func applyConfigFileValues(cfg *config.Config) {
 	if viper.IsSet("collection.synced_start") {
 		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
 	}
+	if viper.IsSet("collection.start_time") {
+		cfg.Collection.StartTime = viper.GetInt64("collection.start_time")
+	}
 
 	// Logging configuration
 	if viper.IsSet("logging.level") {
@@ -480,6 +486,9 @@ func applyCommandLineFlags(cfg *config.Config, cmd *cobra.Command) {
 	}
 	if cmd.Flags().Changed("synced-start") {
 		cfg.Collection.SyncedStart = syncedStart
+	}
+	if cmd.Flags().Changed("start-time") {
+		cfg.Collection.StartTime = startTime
 	}
 
 	// Global flags

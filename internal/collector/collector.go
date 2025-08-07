@@ -181,7 +181,24 @@ func (c *Collector) Collect() error {
 func (c *Collector) CollectWithContext(ctx context.Context) error {
 	var startTime time.Time
 
-	if c.config.Collection.SyncedStart {
+	if c.config.Collection.StartTime > 0 {
+		// Use exact epoch timestamp from --start-time
+		startTime = time.Unix(c.config.Collection.StartTime, 0)
+		fmt.Printf("Exact start time specified - waiting until: %s\n", startTime.Format("15:04:05.000"))
+
+		waitDuration := time.Until(startTime)
+		if waitDuration > 0 {
+			// Wait for exact start time or context cancellation
+			select {
+			case <-time.After(waitDuration):
+				// Normal exact time wait completed
+			case <-ctx.Done():
+				return fmt.Errorf("exact start time cancelled: %w", ctx.Err())
+			}
+		} else if waitDuration < -10*time.Second {
+			return fmt.Errorf("start time is too far in the past: %s", startTime.Format("15:04:05.000"))
+		}
+	} else if c.config.Collection.SyncedStart {
 		startTime = c.calculateSyncedStartTime()
 		fmt.Printf("Synchronized start enabled - waiting until: %s\n", startTime.Format("15:04:05.000"))
 

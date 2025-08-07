@@ -355,33 +355,95 @@ Result: All stations start at 13:02:10 (30 seconds past epoch)
 - **Sample Alignment**: Sub-sample timing accuracy with GPS timestamps
 - **Clock Drift Immunity**: GPS provides continuous time reference
 
+### Exact Start Time Option
+
+For ultimate precision, you can specify an exact epoch timestamp:
+
+```bash
+# Calculate future time (current + 30 seconds)
+future_time=$(date -d "+30 seconds" +%s)
+
+# All stations use identical timestamp  
+./argus-collector --start-time $future_time --collection-id=station1
+./argus-collector --start-time $future_time --collection-id=station2  
+./argus-collector --start-time $future_time --collection-id=station3
+```
+
+**Example with Specific Time:**
+```bash
+# Start all stations at exactly 2025-08-07 13:30:00 UTC
+./argus-collector --start-time 1754591400 --collection-id=north
+./argus-collector --start-time 1754591400 --collection-id=south  
+./argus-collector --start-time 1754591400 --collection-id=east
+
+# Output: "Exact start time specified - waiting until: 13:30:00.000"
+```
+
+**Advantages of --start-time:**
+- **Perfect Synchronization**: All stations start at identical epoch timestamp
+- **No Race Conditions**: Eliminates any timing calculation differences
+- **External Coordination**: Allows coordination via external scheduling systems
+- **Precision Control**: Nanosecond-level start time accuracy
+
+**Time Validation:**
+- **Future Time Required**: Start time must be in the future
+- **Maximum Past Time**: Rejects times more than 10 seconds in the past
+- **Format**: Unix epoch timestamp (seconds since 1970-01-01 00:00:00 UTC)
+
 ### Configuration Options
 
 **Command Line:**
 ```bash
 --synced-start=true     # Enable synchronized start (default)
 --synced-start=false    # Start immediately
+--start-time=1754591260 # Exact epoch timestamp for collection start (overrides synced-start)
 ```
 
 **Configuration File:**
 ```yaml
 collection:
   synced_start: true    # Enable epoch-based synchronization
+  start_time: 1754591260 # Exact epoch timestamp (overrides synced_start)
+```
+
+### Timing Options Hierarchy
+
+The collector uses the following priority order for start timing:
+
+1. **--start-time** (highest priority) - Exact epoch timestamp
+2. **--synced-start=true** - Automatic epoch-based synchronization  
+3. **--synced-start=false** - Immediate start
+
+**Example Priority Demonstration:**
+```bash
+# Uses exact start time (ignores synced-start)
+./argus-collector --start-time 1754591400 --synced-start=true
+
+# Uses synchronized start
+./argus-collector --synced-start=true
+
+# Starts immediately  
+./argus-collector --synced-start=false
 ```
 
 ### Troubleshooting Synchronization
 
 **Verify Synchronization:**
 ```bash
-# All stations should show identical target time
+# Synchronized start - all stations should show identical target time
 ./argus-collector --synced-start --frequency=162400000 --duration=10s
 # Output: "Synchronized start enabled - waiting until: 13:04:10.000"
+
+# Exact start time - all stations should show identical target time
+./argus-collector --start-time 1754591400 --frequency=162400000 --duration=10s
+# Output: "Exact start time specified - waiting until: 13:30:00.000"
 ```
 
 **Common Issues:**
 - **Different Target Times**: Check GPS synchronization on all stations
-- **Long Wait Times**: Normal behavior, maximum ~110 seconds
-- **Immediate Start**: Verify `--synced-start=true` is set
+- **Long Wait Times**: Normal behavior with --synced-start, maximum ~110 seconds
+- **"Start time too far in past"**: Use future timestamp with --start-time
+- **Immediate Start**: Verify correct timing option is set
 
 ## Data Output Format
 
