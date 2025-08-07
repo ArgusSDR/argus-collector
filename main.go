@@ -25,24 +25,30 @@ import (
 
 // Command line flag variables
 var (
-	cfgFile     string  // Configuration file path
-	frequency   float64 // RF frequency to monitor in Hz
-	duration    string  // Collection duration (e.g., "60s")
-	output      string  // Output directory for data files
-	gpsMode     string  // GPS mode: nmea, gpsd, or manual
-	gpsPort     string  // GPS device serial port (for NMEA mode)
-	gpsdHost    string  // GPSD host address (for gpsd mode)
-	gpsdPort    string  // GPSD port (for gpsd mode)
-	verbose     bool    // Enable verbose logging
-	syncedStart bool    // Enable synchronized start timing
-	latitude    float64 // Manual latitude in decimal degrees
-	longitude   float64 // Manual longitude in decimal degrees
-	altitude    float64 // Manual altitude in meters
-	device      string  // RTL-SDR device selection (serial number or index)
-	gain        float64 // Manual gain setting in dB
-	gainMode    string  // Gain mode: auto or manual
-	biasTeeFlag bool    // Enable bias tee for external LNA power
-	showVersion bool    // Show version information
+	cfgFile         string  // Configuration file path
+	frequency       float64 // RF frequency to monitor in Hz
+	duration        string  // Collection duration (e.g., "60s")
+	output          string  // Output directory for data files
+	gpsMode         string  // GPS mode: nmea, gpsd, or manual
+	gpsPort         string  // GPS device serial port (for NMEA mode)
+	gpsdHost        string  // GPSD host address (for gpsd mode)
+	gpsdPort        string  // GPSD port (for gpsd mode)
+	verbose         bool    // Enable verbose logging
+	syncedStart     bool    // Enable synchronized start timing
+	latitude        float64 // Manual latitude in decimal degrees
+	longitude       float64 // Manual longitude in decimal degrees
+	altitude        float64 // Manual altitude in meters
+	device          string  // RTL-SDR device selection (serial number or index)
+	gain            float64 // Manual gain setting in dB
+	gainMode        string  // Gain mode: auto or manual
+	biasTeeFlag     bool    // Enable bias tee for external LNA power
+	showVersion     bool    // Show version information
+	sampleRate      uint32  // Sample rate in Hz
+	freqCorrection  int     // Frequency correction in PPM
+	collectionID    string  // Collection identifier for filename
+	filePrefix      string  // Prefix for output filenames
+	gpsBaudRate     int     // GPS serial port baud rate
+	gpsTimeout      string  // GPS fix timeout duration
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -109,9 +115,17 @@ func init() {
 
 	// RTL-SDR device selection and gain control
 	rootCmd.Flags().StringVarP(&device, "device", "D", "", "RTL-SDR device selection (serial number or index)")
-	rootCmd.Flags().Float64VarP(&gain, "gain", "g", 20.7, "manual gain setting in dB (used when gain-mode is manual)")
+	rootCmd.Flags().Float64VarP(&gain, "gain", "g", 10.0, "manual gain setting in dB (used when gain-mode is manual)")
 	rootCmd.Flags().StringVar(&gainMode, "gain-mode", "manual", "gain control mode: auto (AGC) or manual")
 	rootCmd.Flags().BoolVar(&biasTeeFlag, "bias-tee", false, "enable bias tee for powering external LNAs")
+	
+	// Add missing flags for complete configuration coverage
+	rootCmd.Flags().Uint32Var(&sampleRate, "sample-rate", 0, "sample rate in Hz")
+	rootCmd.Flags().IntVar(&freqCorrection, "frequency-correction", 0, "frequency correction in PPM")
+	rootCmd.Flags().StringVar(&collectionID, "collection-id", "", "collection identifier for filename")
+	rootCmd.Flags().StringVar(&filePrefix, "file-prefix", "", "prefix for output filenames")
+	rootCmd.Flags().IntVar(&gpsBaudRate, "gps-baud", 0, "GPS serial port baud rate (for NMEA mode)")
+	rootCmd.Flags().StringVar(&gpsTimeout, "gps-timeout", "", "GPS fix timeout duration")
 
 	// Add subcommands
 	rootCmd.AddCommand(devicesCmd)
@@ -163,117 +177,27 @@ func runCollector(cmd *cobra.Command) error {
 	// Load default configuration
 	cfg := config.DefaultConfig()
 
-	// Override with values from config file and command line flags
-	if err := viper.Unmarshal(cfg); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
-	}
+	// Apply configuration with proper precedence: defaults < config file < command line
+	applyConfiguration(cfg, cmd)
 
-	// Fix: Manually override GPS coordinates from viper since unmarshal isn't working for nested fields
-	if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
-		viperLat := viper.GetFloat64("gps.manual_latitude")
-		viperLon := viper.GetFloat64("gps.manual_longitude")
-		viperAlt := viper.GetFloat64("gps.manual_altitude")
+	// Handle device selection with proper precedence
+	handleDeviceSelection(cfg, cmd)
 
-		if viperLat != 0.0 || viperLon != 0.0 {
-			cfg.GPS.ManualLatitude = viperLat
-			cfg.GPS.ManualLongitude = viperLon
-			cfg.GPS.ManualAltitude = viperAlt
-		}
-	}
-
-	// Fix: Manually override RTL-SDR config from viper since unmarshal isn't working for nested fields
-	viperSampleRate := viper.GetInt("rtlsdr.sample_rate")
-	if viperSampleRate != 0 && viperSampleRate != int(cfg.RTLSDR.SampleRate) {
-		cfg.RTLSDR.SampleRate = uint32(viperSampleRate)
-	}
-
-	// Fix: Manually override bias tee config from viper since unmarshal isn't working for nested fields
-	viperBiasTee := viper.GetBool("rtlsdr.bias_tee")
-	if viperBiasTee != cfg.RTLSDR.BiasTee {
-		cfg.RTLSDR.BiasTee = viperBiasTee
-	}
-
-	// Handle device selection from command line flag
-	if cmd.Flags().Changed("device") {
-		// Device flag explicitly set - override config file values
-		deviceSelection := device
-
-		// Treat as serial number if it contains non-digit characters or is longer than reasonable for an index
-		// Also treat leading zeros as indication of serial number (e.g., "00000001")
-		isSerial := false
-		if len(deviceSelection) > 2 || strings.HasPrefix(deviceSelection, "0") && len(deviceSelection) > 1 {
-			isSerial = true
-		} else {
-			// Check if it contains non-digit characters
-			for _, r := range deviceSelection {
-				if r < '0' || r > '9' {
-					isSerial = true
-					break
-				}
-			}
-		}
-
-		if isSerial {
-			// It's a serial number
-			cfg.RTLSDR.SerialNumber = deviceSelection
-			cfg.RTLSDR.DeviceIndex = -1 // Set to -1 to indicate serial number should be used
-		} else {
-			// Try to parse as device index
-			if deviceIndex, err := strconv.Atoi(deviceSelection); err == nil {
-				cfg.RTLSDR.DeviceIndex = deviceIndex
-				cfg.RTLSDR.SerialNumber = "" // Clear serial number when using index
-			} else {
-				// Fallback to treating as serial number
-				cfg.RTLSDR.SerialNumber = deviceSelection
-				cfg.RTLSDR.DeviceIndex = -1
-			}
-		}
-	}
-
-	// Handle bias tee flag override
-	if cmd.Flags().Changed("bias-tee") {
-		cfg.RTLSDR.BiasTee = biasTeeFlag
-	}
-
-	// Handle explicit command line flags that should override config file
-	// Check if synced-start flag was explicitly set
-	if cmd.Flags().Changed("synced-start") {
-		// Command line flag overrides config file
-		cfg.Collection.SyncedStart = syncedStart
-	} else {
-		// Use viper value (config file or default)
-		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
-	}
-
-	// GPS mode explicitly specified via --gps-mode flag
-	cfg.GPS.Mode = gpsMode
-	if gpsMode == "manual" {
-		cfg.GPS.ManualLatitude = latitude
-		cfg.GPS.ManualLongitude = longitude
-		cfg.GPS.ManualAltitude = altitude
-	} else if cfg.GPS.Disable {
+	// Handle backward compatibility for GPS disable flag
+	if cfg.GPS.Disable {
 		// Backward compatibility: config file has disable: true
 		cfg.GPS.Mode = "manual"
-		cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
-		cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
-		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
+		if cfg.GPS.ManualLatitude == 0.0 && cfg.GPS.ManualLongitude == 0.0 {
+			cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
+			cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
+			cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
+		}
 	}
 
-	// Parse duration string with proper precedence: CLI flag > config file > code default
-	var durationStr string
-	if cmd.Flags().Changed("duration") {
-		// Command line flag takes highest precedence
-		durationStr = duration
-	} else {
-		// Use config file value if available, otherwise fall back to code default
-		durationStr = viper.GetString("collection.duration")
+	// Validate duration format
+	if cfg.Collection.Duration == 0 {
+		return fmt.Errorf("invalid duration: must be greater than 0")
 	}
-
-	durationParsed, err := time.ParseDuration(durationStr)
-	if err != nil {
-		return fmt.Errorf("invalid duration format: %w", err)
-	}
-	cfg.Collection.Duration = durationParsed
 
 	// Validate GPS configuration
 	switch cfg.GPS.Mode {
@@ -383,6 +307,220 @@ func runCollector(cmd *cobra.Command) error {
 
 	fmt.Printf("Collection completed successfully.\n")
 	return nil
+}
+
+// applyConfiguration applies configuration with proper precedence: defaults < config file < command line
+func applyConfiguration(cfg *config.Config, cmd *cobra.Command) {
+	// Apply config file values (overrides defaults)
+	applyConfigFileValues(cfg)
+	
+	// Apply command line flags (overrides config file and defaults)
+	applyCommandLineFlags(cfg, cmd)
+}
+
+// applyConfigFileValues applies configuration file values to override defaults
+func applyConfigFileValues(cfg *config.Config) {
+	// RTL-SDR configuration
+	if viper.IsSet("rtlsdr.frequency") {
+		cfg.RTLSDR.Frequency = viper.GetFloat64("rtlsdr.frequency")
+	}
+	if viper.IsSet("rtlsdr.sample_rate") {
+		cfg.RTLSDR.SampleRate = uint32(viper.GetInt("rtlsdr.sample_rate"))
+	}
+	if viper.IsSet("rtlsdr.gain") {
+		cfg.RTLSDR.Gain = viper.GetFloat64("rtlsdr.gain")
+	}
+	if viper.IsSet("rtlsdr.gain_mode") {
+		cfg.RTLSDR.GainMode = viper.GetString("rtlsdr.gain_mode")
+	}
+	if viper.IsSet("rtlsdr.device_index") {
+		cfg.RTLSDR.DeviceIndex = viper.GetInt("rtlsdr.device_index")
+	}
+	if viper.IsSet("rtlsdr.serial_number") {
+		cfg.RTLSDR.SerialNumber = viper.GetString("rtlsdr.serial_number")
+	}
+	if viper.IsSet("rtlsdr.bias_tee") {
+		cfg.RTLSDR.BiasTee = viper.GetBool("rtlsdr.bias_tee")
+	}
+	if viper.IsSet("rtlsdr.frequency_correction") {
+		cfg.RTLSDR.FrequencyCorrection = viper.GetInt("rtlsdr.frequency_correction")
+	}
+
+	// GPS configuration
+	if viper.IsSet("gps.mode") {
+		cfg.GPS.Mode = viper.GetString("gps.mode")
+	}
+	if viper.IsSet("gps.port") {
+		cfg.GPS.Port = viper.GetString("gps.port")
+	}
+	if viper.IsSet("gps.baud_rate") {
+		cfg.GPS.BaudRate = viper.GetInt("gps.baud_rate")
+	}
+	if viper.IsSet("gps.gpsd_host") {
+		cfg.GPS.GPSDHost = viper.GetString("gps.gpsd_host")
+	}
+	if viper.IsSet("gps.gpsd_port") {
+		cfg.GPS.GPSDPort = viper.GetString("gps.gpsd_port")
+	}
+	if viper.IsSet("gps.timeout") {
+		cfg.GPS.Timeout = viper.GetDuration("gps.timeout")
+	}
+	if viper.IsSet("gps.disable") {
+		cfg.GPS.Disable = viper.GetBool("gps.disable")
+	}
+	if viper.IsSet("gps.manual_latitude") {
+		cfg.GPS.ManualLatitude = viper.GetFloat64("gps.manual_latitude")
+	}
+	if viper.IsSet("gps.manual_longitude") {
+		cfg.GPS.ManualLongitude = viper.GetFloat64("gps.manual_longitude")
+	}
+	if viper.IsSet("gps.manual_altitude") {
+		cfg.GPS.ManualAltitude = viper.GetFloat64("gps.manual_altitude")
+	}
+
+	// Collection configuration
+	if viper.IsSet("collection.duration") {
+		if duration, err := time.ParseDuration(viper.GetString("collection.duration")); err == nil {
+			cfg.Collection.Duration = duration
+		}
+	}
+	if viper.IsSet("collection.output_dir") {
+		cfg.Collection.OutputDir = viper.GetString("collection.output_dir")
+	}
+	if viper.IsSet("collection.file_prefix") {
+		cfg.Collection.FilePrefix = viper.GetString("collection.file_prefix")
+	}
+	if viper.IsSet("collection.collection_id") {
+		cfg.Collection.CollectionID = viper.GetString("collection.collection_id")
+	}
+	if viper.IsSet("collection.synced_start") {
+		cfg.Collection.SyncedStart = viper.GetBool("collection.synced_start")
+	}
+
+	// Logging configuration
+	if viper.IsSet("logging.level") {
+		cfg.Logging.Level = viper.GetString("logging.level")
+	}
+	if viper.IsSet("logging.file") {
+		cfg.Logging.File = viper.GetString("logging.file")
+	}
+}
+
+// applyCommandLineFlags applies command line flags to override config file and defaults
+func applyCommandLineFlags(cfg *config.Config, cmd *cobra.Command) {
+	// RTL-SDR flags
+	if cmd.Flags().Changed("frequency") {
+		cfg.RTLSDR.Frequency = frequency
+	}
+	if cmd.Flags().Changed("sample-rate") {
+		cfg.RTLSDR.SampleRate = sampleRate
+	}
+	if cmd.Flags().Changed("gain") {
+		cfg.RTLSDR.Gain = gain
+	}
+	if cmd.Flags().Changed("gain-mode") {
+		cfg.RTLSDR.GainMode = gainMode
+	}
+	if cmd.Flags().Changed("bias-tee") {
+		cfg.RTLSDR.BiasTee = biasTeeFlag
+	}
+	if cmd.Flags().Changed("frequency-correction") {
+		cfg.RTLSDR.FrequencyCorrection = freqCorrection
+	}
+
+	// GPS flags
+	if cmd.Flags().Changed("gps-mode") {
+		cfg.GPS.Mode = gpsMode
+	}
+	if cmd.Flags().Changed("gps-port") {
+		cfg.GPS.Port = gpsPort
+	}
+	if cmd.Flags().Changed("gps-baud") {
+		cfg.GPS.BaudRate = gpsBaudRate
+	}
+	if cmd.Flags().Changed("gps-timeout") {
+		if timeout, err := time.ParseDuration(gpsTimeout); err == nil {
+			cfg.GPS.Timeout = timeout
+		}
+	}
+	if cmd.Flags().Changed("gpsd-host") {
+		cfg.GPS.GPSDHost = gpsdHost
+	}
+	if cmd.Flags().Changed("gpsd-port") {
+		cfg.GPS.GPSDPort = gpsdPort
+	}
+	if cmd.Flags().Changed("latitude") {
+		cfg.GPS.ManualLatitude = latitude
+	}
+	if cmd.Flags().Changed("longitude") {
+		cfg.GPS.ManualLongitude = longitude
+	}
+	if cmd.Flags().Changed("altitude") {
+		cfg.GPS.ManualAltitude = altitude
+	}
+
+	// Collection flags
+	if cmd.Flags().Changed("duration") {
+		if duration, err := time.ParseDuration(duration); err == nil {
+			cfg.Collection.Duration = duration
+		}
+	}
+	if cmd.Flags().Changed("output") {
+		cfg.Collection.OutputDir = output
+	}
+	if cmd.Flags().Changed("file-prefix") {
+		cfg.Collection.FilePrefix = filePrefix
+	}
+	if cmd.Flags().Changed("collection-id") {
+		cfg.Collection.CollectionID = collectionID
+	}
+	if cmd.Flags().Changed("synced-start") {
+		cfg.Collection.SyncedStart = syncedStart
+	}
+
+	// Global flags
+	if cmd.Flags().Changed("verbose") {
+		// Verbose is handled separately in the main function
+	}
+}
+
+// handleDeviceSelection handles RTL-SDR device selection with proper precedence
+func handleDeviceSelection(cfg *config.Config, cmd *cobra.Command) {
+	if cmd.Flags().Changed("device") {
+		// Device flag explicitly set - override config file values
+		deviceSelection := device
+
+		// Treat as serial number if it contains non-digit characters or is longer than reasonable for an index
+		// Also treat leading zeros as indication of serial number (e.g., "00000001")
+		isSerial := false
+		if len(deviceSelection) > 2 || strings.HasPrefix(deviceSelection, "0") && len(deviceSelection) > 1 {
+			isSerial = true
+		} else {
+			// Check if it contains non-digit characters
+			for _, r := range deviceSelection {
+				if r < '0' || r > '9' {
+					isSerial = true
+					break
+				}
+			}
+		}
+
+		if isSerial {
+			// It's a serial number
+			cfg.RTLSDR.SerialNumber = deviceSelection
+			cfg.RTLSDR.DeviceIndex = -1 // Set to -1 to indicate serial number should be used
+		} else {
+			// Try to parse as device index
+			if deviceIndex, err := strconv.Atoi(deviceSelection); err == nil {
+				cfg.RTLSDR.DeviceIndex = deviceIndex
+				cfg.RTLSDR.SerialNumber = "" // Clear serial number when using index
+			} else {
+				// Fallback to treating as serial number
+				cfg.RTLSDR.SerialNumber = deviceSelection
+				cfg.RTLSDR.DeviceIndex = -1
+			}
+		}
+	}
 }
 
 // listDevices lists all available RTL-SDR devices with their information

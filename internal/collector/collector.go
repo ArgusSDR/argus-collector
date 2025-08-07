@@ -202,10 +202,16 @@ func (c *Collector) CollectWithContext(ctx context.Context) error {
 		startTime = time.Now()
 	}
 
-	// Generate device identifier for filename
-	deviceID := c.getDeviceIdentifier()
-
-	collectionID := fmt.Sprintf("%s-%s_%d", c.config.Collection.FilePrefix, deviceID, startTime.Unix())
+	// Generate collection ID based on configuration
+	var collectionID string
+	if c.config.Collection.CollectionID != "" {
+		// Use configured collection ID with timestamp suffix
+		collectionID = fmt.Sprintf("%s_%d", c.config.Collection.CollectionID, startTime.Unix())
+	} else {
+		// Generate collection ID using file prefix and device identifier
+		deviceID := c.getDeviceIdentifier()
+		collectionID = fmt.Sprintf("%s-%s_%d", c.config.Collection.FilePrefix, deviceID, startTime.Unix())
+	}
 
 	fmt.Printf("Starting collection (ID: %s, Duration: %v)\n", collectionID, c.config.Collection.Duration)
 	// Calculate timeout buffer: 3.2x the collection duration

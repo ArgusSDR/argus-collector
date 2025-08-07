@@ -16,6 +16,10 @@ type Device struct {
 	gain       int    // Stored gain setting
 	gainMode   string // Stored gain mode setting
 	biasTee    bool   // Stored bias tee setting
+	
+	// Software AGC state (stub)
+	agcEnabled     bool    // Software AGC enabled (stub)
+	agcTargetPower float64 // Target signal power (stub)
 }
 
 // IQSample represents a stub IQ sample structure (matches real implementation)
@@ -27,22 +31,24 @@ type IQSample struct {
 // NewDevice creates a stub RTL-SDR device for testing
 func NewDevice(deviceIndex int) (*Device, error) {
 	return &Device{
-		frequency:  433920000, // Default frequency
-		sampleRate: 2048000,   // Default sample rate
-		gain:       207,       // Default gain (20.7 dB in tenths)
-		gainMode:   "manual",  // Default to manual gain
-		biasTee:    false,     // Default bias tee off
+		frequency:      433920000, // Default frequency
+		sampleRate:     2048000,   // Default sample rate
+		gain:           207,       // Default gain (20.7 dB in tenths)
+		gainMode:       "manual",  // Default to manual gain
+		biasTee:        false,     // Default bias tee off
+		agcTargetPower: 0.7,       // Target 70% of full scale
 	}, nil
 }
 
 // NewDeviceBySerial creates a stub RTL-SDR device by serial number for testing
 func NewDeviceBySerial(serialNumber string) (*Device, error) {
 	return &Device{
-		frequency:  433920000, // Default frequency
-		sampleRate: 2048000,   // Default sample rate
-		gain:       207,       // Default gain (20.7 dB in tenths)
-		gainMode:   "manual",  // Default to manual gain
-		biasTee:    false,     // Default bias tee off
+		frequency:      433920000, // Default frequency
+		sampleRate:     2048000,   // Default sample rate
+		gain:           207,       // Default gain (20.7 dB in tenths)
+		gainMode:       "manual",  // Default to manual gain
+		biasTee:        false,     // Default bias tee off
+		agcTargetPower: 0.7,       // Target 70% of full scale
 	}, nil
 }
 
@@ -174,8 +180,14 @@ func (d *Device) SetGain(gain float64) error {
 // SetGainMode stub method - stores gain mode setting
 func (d *Device) SetGainMode(mode string) error {
 	switch mode {
-	case "auto", "manual":
+	case "auto":
 		d.gainMode = mode
+		d.agcEnabled = true
+		fmt.Printf("Software AGC enabled (stub mode - target: %.1f%%)\n", d.agcTargetPower*100)
+		return nil
+	case "manual":
+		d.gainMode = mode
+		d.agcEnabled = false
 		return nil
 	default:
 		return fmt.Errorf("invalid gain mode: %s (must be 'auto' or 'manual')", mode)

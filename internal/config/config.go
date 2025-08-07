@@ -15,13 +15,14 @@ type Config struct {
 
 // RTLSDRConfig contains RTL-SDR device configuration parameters
 type RTLSDRConfig struct {
-	Frequency    float64 `yaml:"frequency"`     // RF frequency in Hz
-	SampleRate   uint32  `yaml:"sample_rate"`   // Sample rate in Hz
-	Gain         float64 `yaml:"gain"`          // RF gain in dB (used when GainMode is "manual")
-	GainMode     string  `yaml:"gain_mode"`     // Gain mode: "auto" (AGC) or "manual"
-	DeviceIndex  int     `yaml:"device_index"`  // RTL-SDR device index (0-based, used if SerialNumber is empty)
-	SerialNumber string  `yaml:"serial_number"` // RTL-SDR device serial number (preferred over device_index)
-	BiasTee      bool    `yaml:"bias_tee"`      // Enable bias tee for powering external LNAs
+	Frequency          float64 `yaml:"frequency"`            // RF frequency in Hz
+	SampleRate         uint32  `yaml:"sample_rate"`          // Sample rate in Hz
+	Gain               float64 `yaml:"gain"`                 // RF gain in dB (used when GainMode is "manual")
+	GainMode           string  `yaml:"gain_mode"`            // Gain mode: "auto" (AGC) or "manual"
+	DeviceIndex        int     `yaml:"device_index"`         // RTL-SDR device index (0-based, used if SerialNumber is empty)
+	SerialNumber       string  `yaml:"serial_number"`        // RTL-SDR device serial number (preferred over device_index)
+	BiasTee            bool    `yaml:"bias_tee"`             // Enable bias tee for powering external LNAs
+	FrequencyCorrection int     `yaml:"frequency_correction"` // Frequency correction in PPM
 }
 
 // GPSConfig contains GPS receiver configuration parameters
@@ -40,10 +41,11 @@ type GPSConfig struct {
 
 // CollectionConfig contains data collection configuration parameters
 type CollectionConfig struct {
-	Duration    time.Duration `yaml:"duration"`     // Collection duration
-	OutputDir   string        `yaml:"output_dir"`   // Output directory for data files
-	FilePrefix  string        `yaml:"file_prefix"`  // Prefix for output filenames
-	SyncedStart bool          `yaml:"synced_start"` // Enable synchronized start timing
+	Duration     time.Duration `yaml:"duration"`      // Collection duration
+	OutputDir    string        `yaml:"output_dir"`    // Output directory for data files
+	FilePrefix   string        `yaml:"file_prefix"`   // Prefix for output filenames
+	CollectionID string        `yaml:"collection_id"` // Collection identifier for filename
+	SyncedStart  bool          `yaml:"synced_start"`  // Enable synchronized start timing
 }
 
 // LoggingConfig contains logging configuration parameters
@@ -56,13 +58,14 @@ type LoggingConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		RTLSDR: RTLSDRConfig{
-			Frequency:    433.92e6, // 433.92 MHz ISM band
-			SampleRate:   2048000,  // 2.048 MSps
-			Gain:         20.7,     // 20.7 dB gain
-			GainMode:     "manual", // Manual gain control by default
-			DeviceIndex:  0,        // First RTL-SDR device
-			SerialNumber: "",       // Use device_index by default
-			BiasTee:      false,    // Bias tee disabled by default
+			Frequency:          433.92e6, // 433.92 MHz ISM band
+			SampleRate:         2048000,  // 2.048 MSps
+			Gain:               20.7,     // 20.7 dB gain
+			GainMode:           "manual", // Manual gain control by default
+			DeviceIndex:        0,        // First RTL-SDR device
+			SerialNumber:       "",       // Use device_index by default
+			BiasTee:            false,    // Bias tee disabled by default
+			FrequencyCorrection: 0,       // No frequency correction by default
 		},
 		GPS: GPSConfig{
 			Mode:            "nmea",           // Default to NMEA serial mode
@@ -77,10 +80,11 @@ func DefaultConfig() *Config {
 			ManualAltitude:  0.0,              // Default altitude (sea level)
 		},
 		Collection: CollectionConfig{
-			Duration:    60 * time.Second, // 60 second collection duration
-			OutputDir:   "./data",         // Current directory data folder
-			FilePrefix:  "argus",          // File prefix for output files
-			SyncedStart: true,             // Enable synchronized start by default
+			Duration:     60 * time.Second, // 60 second collection duration
+			OutputDir:    "./data",         // Current directory data folder
+			FilePrefix:   "argus",          // File prefix for output files
+			CollectionID: "",               // No default collection ID
+			SyncedStart:  true,             // Enable synchronized start by default
 		},
 		Logging: LoggingConfig{
 			Level: "info",      // Info level logging

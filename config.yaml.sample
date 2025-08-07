@@ -1,31 +1,34 @@
 rtlsdr:
-  frequency: 162400000     #  common NWS Weather Radio frequency
-			   # 162.400 MHz, 162.425 MHz, 162.450 MHz, 162.475 MHz, 162.500 MHz, 162.525 MHz, and 162.550 MHz.
+  frequency: 162400000     # Target frequency in Hz - common NWS Weather Radio frequency
+                           # 162.400 MHz, 162.425 MHz, 162.450 MHz, 162.475 MHz, 162.500 MHz, 162.525 MHz, and 162.550 MHz.
   sample_rate: 2048000     # Sample rate in Hz
-  gain: 20.7               # RF gain in dB
-  device_index:            # RTL-SDR device index (used if serial_number is empty)
+  gain_mode: "auto"        # Gain control mode: "auto" (AGC) or "manual"
+  gain: 10.0               # RF gain in dB (used when gain_mode is "manual")
+  device_index: 0          # RTL-SDR device index (used if serial_number is empty)
   serial_number: ""        # RTL-SDR device serial number (preferred over device_index)
   bias_tee: false          # Enable bias tee for powering external LNAs
+  frequency_correction: 0  # Frequency correction in PPM
 
 gps:
-  mode: "manual"             # GPS mode: "nmea", "gpsd", or "manual"  
-  port: "/dev/ttyACM0"     # GPS serial port (for NMEA mode)
-  baud_rate: 38400         # Serial communication speed (for NMEA mode) - u-blox often uses 38400
+  mode: "gpsd"             # GPS mode: "nmea", "gpsd", or "manual"  
   gpsd_host: "localhost"   # GPSD host address (for gpsd mode)
   gpsd_port: "2947"        # GPSD port (for gpsd mode)
+# Setting for nmea mode
+  port: "/dev/ttyACM0"     # GPS serial port (for NMEA mode)
+  baud_rate: 9600          # Serial communication speed (for NMEA mode)
+# Setting for manual mode
   timeout: 30s             # GPS fix timeout
   disable: false           # Disable GPS hardware and use manual coordinates (deprecated, use mode: "manual")
-  manual_latitude: 35.500  # Manual latitude in decimal degrees (for manual mode)
-  manual_longitude: -97.600 # Manual longitude in decimal degrees (for manual mode)
-  manual_altitude: 365.0   # Manual altitude in meters (for manual mode)
-
-
+  manual_latitude: 0.0     # Manual latitude in decimal degrees (for manual mode)
+  manual_longitude: 0.0    # Manual longitude in decimal degrees (for manual mode)
+  manual_altitude: 0.0     # Manual altitude in meters (for manual mode)
 
 collection:
   duration: 60s            # Collection duration
   output_dir: "./data"     # Output directory
   file_prefix: "argus"     # File naming prefix
-  synced_start: false      # Enable synchronized start based on epoch time (can be overridden with --synced-start=false)
+  collection_id: ""        # Collection identifier for filename (optional)
+  synced_start: false      # Enable synchronized start based on epoch time
 
 logging:
   level: "info"            # Log level (debug, info, warn, error)

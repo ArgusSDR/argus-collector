@@ -7,6 +7,7 @@ package rtlsdr
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jpoirier/gortlsdr"
@@ -20,6 +21,13 @@ type Device struct {
 	gain       int             // Current gain in tenths of dB
 	gainMode   string          // Current gain mode: "auto" or "manual"
 	biasTee    bool            // Bias tee enabled state
+	
+	// Software AGC state
+	agcEnabled     bool        // Software AGC enabled
+	agcTargetPower float64     // Target signal power for AGC (0.0 to 1.0)
+	agcGainStep    float64     // Gain adjustment step size in dB
+	agcMaxGain     float64     // Maximum allowed gain in dB
+	agcMinGain     float64     // Minimum allowed gain in dB
 }
 
 // IQSample represents a collected set of IQ samples with timestamp
@@ -48,7 +56,13 @@ func NewDevice(deviceIndex int) (*Device, error) {
 		return nil, fmt.Errorf("failed to open RTL-SDR device: %w", err)
 	}
 
-	return &Device{dev: dev}, nil
+	return &Device{
+		dev:            dev,
+		agcTargetPower: 0.7,   // Target 70% of full scale
+		agcGainStep:    3.0,   // 3 dB steps
+		agcMaxGain:     49.6,  // Maximum RTL-SDR gain
+		agcMinGain:     0.0,   // Minimum RTL-SDR gain
+	}, nil
 }
 
 // NewDeviceBySerial creates a new RTL-SDR device instance by serial number
@@ -75,7 +89,13 @@ func NewDeviceBySerial(serialNumber string) (*Device, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to open RTL-SDR device with serial %s: %w", serialNumber, err)
 			}
-			return &Device{dev: dev}, nil
+			return &Device{
+				dev:            dev,
+				agcTargetPower: 0.7,   // Target 70% of full scale
+				agcGainStep:    3.0,   // 3 dB steps
+				agcMaxGain:     49.6,  // Maximum RTL-SDR gain
+				agcMinGain:     0.0,   // Minimum RTL-SDR gain
+			}, nil
 		}
 	}
 
@@ -240,17 +260,26 @@ func (d *Device) SetGain(gain float64) error {
 }
 
 // SetGainMode sets the gain control mode
-// mode: "auto" for AGC, "manual" for manual gain control
+// mode: "auto" for software AGC, "manual" for manual gain control
 func (d *Device) SetGainMode(mode string) error {
 	switch mode {
 	case "auto":
-		// Enable AGC
-		if err := d.dev.SetTunerGainMode(false); err != nil {
-			return fmt.Errorf("failed to enable AGC: %w", err)
+		// Enable manual gain mode in hardware (we'll control gain in software)
+		if err := d.dev.SetTunerGainMode(true); err != nil {
+			return fmt.Errorf("failed to enable manual gain control for software AGC: %w", err)
+		}
+		// Set initial gain to middle of the range for AGC starting point
+		initialGain := (d.agcMaxGain + d.agcMinGain) / 2
+		if err := d.SetGain(initialGain); err != nil {
+			return fmt.Errorf("failed to set initial AGC gain: %w", err)
 		}
 		d.gainMode = "auto"
+		d.agcEnabled = true
+		fmt.Printf("Software AGC enabled (target: %.1f%%, range: %.1f-%.1f dB, step: %.1f dB)\n", 
+			d.agcTargetPower*100, d.agcMinGain, d.agcMaxGain, d.agcGainStep)
 	case "manual":
-		// Disable AGC (enable manual gain control)
+		// Disable software AGC and enable manual gain control
+		d.agcEnabled = false
 		if err := d.dev.SetTunerGainMode(true); err != nil {
 			return fmt.Errorf("failed to enable manual gain control: %w", err)
 		}
@@ -279,6 +308,80 @@ func (d *Device) GetGain() float64 {
 // GetGainMode returns the current gain mode
 func (d *Device) GetGainMode() string {
 	return d.gainMode
+}
+
+// calculateSignalPower calculates the RMS power of IQ samples
+func (d *Device) calculateSignalPower(samples []complex64) float64 {
+	if len(samples) == 0 {
+		return 0.0
+	}
+	
+	var sumSquares float64
+	for _, sample := range samples {
+		// Calculate magnitude squared (power)
+		magnitude := real(sample)*real(sample) + imag(sample)*imag(sample)
+		sumSquares += float64(magnitude)
+	}
+	
+	// Return RMS power (sqrt of mean of squares)
+	return math.Sqrt(sumSquares / float64(len(samples)))
+}
+
+// adjustGainAGC performs automatic gain control based on signal power
+func (d *Device) adjustGainAGC(samples []complex64) error {
+	if !d.agcEnabled || len(samples) == 0 {
+		return nil
+	}
+	
+	// Calculate current signal power
+	currentPower := d.calculateSignalPower(samples)
+	
+	// Calculate power error (how far we are from target)
+	powerError := d.agcTargetPower - currentPower
+	
+	// Only adjust if error is significant (>10% of target)
+	if math.Abs(powerError) < d.agcTargetPower*0.1 {
+		return nil
+	}
+	
+	// Calculate gain adjustment needed
+	// More power error = larger gain change
+	var gainAdjustment float64
+	if powerError > 0 {
+		// Signal too weak, increase gain
+		gainAdjustment = d.agcGainStep * (powerError / d.agcTargetPower)
+		if gainAdjustment > d.agcGainStep*2 {
+			gainAdjustment = d.agcGainStep * 2 // Limit maximum adjustment
+		}
+	} else {
+		// Signal too strong, decrease gain
+		gainAdjustment = d.agcGainStep * (powerError / d.agcTargetPower)
+		if gainAdjustment < -d.agcGainStep*2 {
+			gainAdjustment = -d.agcGainStep * 2 // Limit maximum adjustment
+		}
+	}
+	
+	// Calculate new gain value
+	currentGain := d.GetGain()
+	newGain := currentGain + gainAdjustment
+	
+	// Clamp to valid range
+	if newGain > d.agcMaxGain {
+		newGain = d.agcMaxGain
+	} else if newGain < d.agcMinGain {
+		newGain = d.agcMinGain
+	}
+	
+	// Only adjust if change is significant
+	if math.Abs(newGain-currentGain) > 0.5 {
+		if err := d.SetGain(newGain); err != nil {
+			return fmt.Errorf("AGC gain adjustment failed: %w", err)
+		}
+		fmt.Printf("AGC: Power=%.3f (target=%.3f), Gain: %.1f→%.1f dB\n", 
+			currentPower, d.agcTargetPower, currentGain, newGain)
+	}
+	
+	return nil
 }
 
 // SetBiasTee enables or disables the bias tee for powering external LNAs
@@ -412,14 +515,23 @@ readLoop:
 				len(allSamples), totalSamples, float64(len(allSamples))/float64(d.sampleRate))
 		}
 
-		// Convert raw bytes to complex64 samples
+		// Convert raw bytes to complex64 samples and store chunk for AGC
 		// RTL-SDR provides unsigned 8-bit IQ pairs (I,Q,I,Q...)
+		chunkStart := len(allSamples)
 		for i := 0; i < nRead; i += 2 {
 			if i+1 < nRead {
 				// Convert unsigned 8-bit to signed float [-1.0, 1.0]
 				i_val := (float32(buffer[i]) - 127.5) / 127.5
 				q_val := (float32(buffer[i+1]) - 127.5) / 127.5
 				allSamples = append(allSamples, complex(i_val, q_val))
+			}
+		}
+
+		// Perform AGC adjustment based on this chunk of samples
+		if d.agcEnabled && len(allSamples) > chunkStart {
+			chunkSamples := allSamples[chunkStart:]
+			if err := d.adjustGainAGC(chunkSamples); err != nil {
+				fmt.Printf("AGC adjustment error: %v\n", err)
 			}
 		}
 
