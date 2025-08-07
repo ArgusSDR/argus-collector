@@ -374,17 +374,20 @@ func (c *Collector) calculateSyncedStartTime() time.Time {
 	now := time.Now()
 	currentEpoch := now.Unix()
 
-	// Add 5 seconds to current epoch time, then mod 100 for sync point
-	futureEpoch := currentEpoch + 5
-	syncPoint := futureEpoch % 100
+	// Improved algorithm: Use fixed 100-second epochs with predetermined sync point
+	// This eliminates race conditions when stations start at different times
+	
+	// Calculate next 100-second boundary with 30-second buffer
+	syncEpoch := ((currentEpoch + 30) / 100 + 1) * 100
+	
+	// Use fixed sync point at 30 seconds past the epoch boundary
+	// This provides predictable timing and eliminates race conditions
+	syncPoint := int64(30)
+	targetTime := syncEpoch + syncPoint
 
-	// Find next time when seconds field equals syncPoint
-	nextMinute := (currentEpoch/60 + 1) * 60 // Start of next minute
-	targetTime := nextMinute + int64(syncPoint)
-
-	// If target is in the past, add another minute
-	if targetTime <= currentEpoch {
-		targetTime += 60
+	// Ensure we have at least 10 seconds preparation time
+	if targetTime - currentEpoch < 10 {
+		targetTime += 100  // Add another 100-second epoch
 	}
 
 	return time.Unix(targetTime, 0)

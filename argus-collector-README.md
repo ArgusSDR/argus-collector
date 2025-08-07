@@ -250,25 +250,138 @@ For testing without GPS hardware:
 
 ## Multi-Station Synchronization
 
-### Automatic Epoch Coordination
-The collector automatically coordinates with other stations:
+### Synchronized Start Algorithm
 
-1. **GPS Lock Acquisition**: Each station waits for GPS synchronization
-2. **Network Coordination**: Stations communicate via broadcast/multicast
-3. **Epoch Calculation**: Next GPS second boundary selected as start time
-4. **Synchronized Start**: All stations begin collection simultaneously
+The collector uses a sophisticated epoch-based timing algorithm for autonomous multi-station coordination without requiring network communication between stations.
+
+### Algorithm Overview
+
+```bash
+# Enable synchronized start (default)
+./argus-collector --synced-start --frequency=162400000 --duration=30s
+
+# Disable for immediate start
+./argus-collector --synced-start=false --frequency=162400000 --duration=30s
+```
+
+### Mathematical Algorithm
+
+The synchronized start calculation uses fixed 100-second epochs with a predetermined sync point:
+
+```
+Algorithm Steps:
+1. syncEpoch = ((currentTime + 30) ÷ 100 + 1) × 100
+2. syncPoint = 30 seconds (fixed)
+3. targetTime = syncEpoch + syncPoint
+4. If (targetTime - currentTime) < 10: targetTime += 100
+```
+
+### Example Calculation
+
+```bash
+Current time: 13:00:45 (epoch: 1754589645)
+
+Step 1: Calculate next epoch boundary
+syncEpoch = ((1754589645 + 30) ÷ 100 + 1) × 100 = 1754589700
+
+Step 2: Add fixed sync point  
+targetTime = 1754589700 + 30 = 1754589730
+
+Result: All stations start at 13:02:10 (30 seconds past epoch)
+```
+
+### Algorithm Properties
+
+| Property | Value | Explanation |
+|----------|-------|-------------|
+| **Epoch Cycle** | 100 seconds | Fixed synchronization intervals |
+| **Sync Point** | 30 seconds | Fixed offset from epoch boundary |
+| **Minimum Wait** | 10 seconds | Guaranteed preparation time |
+| **Maximum Wait** | ~110 seconds | If sync point just passed |
+| **Race Condition** | **Eliminated** | All stations calculate identical target time |
+
+### Timing Characteristics
+
+**✅ Advantages:**
+- **No Race Conditions**: Stations starting within 100s window synchronize
+- **Deterministic**: Same calculation result regardless of start time
+- **Autonomous**: No network coordination required
+- **Predictable**: Fixed 100-second intervals with :10, :40 start times
+
+**Example Sync Times:**
+```
+13:01:10, 13:02:40, 13:04:10, 13:05:40, 13:07:10...
+```
+
+### Multi-Station Coordination
+
+**Deployment Process:**
+
+1. **GPS Synchronization**: Ensure all stations have GPS time sync
+2. **Launch Window**: Start all collectors within same 100-second window  
+3. **Automatic Coordination**: Algorithm calculates identical target time
+4. **Synchronized Start**: All stations begin simultaneously
 5. **Timestamp Embedding**: Each sample period tagged with GPS time
 
+**Example Multi-Station Launch:**
+```bash
+# All stations can start anytime between 13:00:00 - 13:01:39
+# They will all synchronize to start at 13:02:10
+
+# Station 1 (started at 13:00:15)
+./argus-collector --collection-id=north --synced-start
+
+# Station 2 (started at 13:00:22)  
+./argus-collector --collection-id=south --synced-start
+
+# Station 3 (started at 13:01:05)
+./argus-collector --collection-id=east --synced-start
+
+# All stations output: "Synchronized start enabled - waiting until: 13:02:10.000"
+```
+
 ### Network Requirements
-- **UDP Multicast**: Default coordination method
-- **Broadcast**: Alternative for simple networks  
-- **Manual Sync**: Specify exact start time for air-gapped deployments
+
+**No Network Coordination Required:**
+- **Independent Calculation**: Each station computes target time autonomously
+- **GPS-Only Dependency**: Only requires GPS time synchronization
+- **Air-Gap Compatible**: Works without network connectivity between stations
+- **Scalable**: Supports unlimited number of stations
 
 ### Timing Accuracy
+
 - **GPS Precision**: ±10-40 nanoseconds typical
-- **Network Jitter**: <1 millisecond impact
-- **Sample Alignment**: Sub-sample timing accuracy
-- **Clock Drift**: Periodic GPS re-synchronization
+- **Algorithm Precision**: 1-second synchronization accuracy
+- **Sample Alignment**: Sub-sample timing accuracy with GPS timestamps
+- **Clock Drift Immunity**: GPS provides continuous time reference
+
+### Configuration Options
+
+**Command Line:**
+```bash
+--synced-start=true     # Enable synchronized start (default)
+--synced-start=false    # Start immediately
+```
+
+**Configuration File:**
+```yaml
+collection:
+  synced_start: true    # Enable epoch-based synchronization
+```
+
+### Troubleshooting Synchronization
+
+**Verify Synchronization:**
+```bash
+# All stations should show identical target time
+./argus-collector --synced-start --frequency=162400000 --duration=10s
+# Output: "Synchronized start enabled - waiting until: 13:04:10.000"
+```
+
+**Common Issues:**
+- **Different Target Times**: Check GPS synchronization on all stations
+- **Long Wait Times**: Normal behavior, maximum ~110 seconds
+- **Immediate Start**: Verify `--synced-start=true` is set
 
 ## Data Output Format
 
