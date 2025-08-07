@@ -96,10 +96,22 @@ func init() {
 
 // runProcessor is the main application logic
 func runProcessor(cmd *cobra.Command) error {
-	// Display banner
-	fmt.Printf("╔══════════════════════════════════════════════════════════════╗\n")
-	fmt.Printf("║               ARGUS TDOA PROCESSOR %s                ║\n", fmt.Sprintf("%-8s", version.GetFullVersion()))
-	fmt.Printf("╚══════════════════════════════════════════════════════════════╝\n\n")
+	// Find matching files first to validate before printing header
+	files, err := findMatchingFiles(inputPattern)
+	if err != nil {
+		return fmt.Errorf("failed to find input files: %w", err)
+	}
+
+	if len(files) == 0 {
+		return fmt.Errorf("no files found matching pattern '%s'. Make sure:\n  - Pattern includes correct path (e.g., 'data/argus-*.dat')\n  - Files exist and have .dat extension\n  - Pattern is quoted to prevent shell expansion", inputPattern)
+	}
+
+	if len(files) < 3 {
+		return fmt.Errorf("TDOA processing requires at least 3 input files, found %d:\n%s\nPattern: '%s'\nTip: Use quotes around patterns to prevent shell expansion: --input 'data/argus*.dat'", len(files), formatFileList(files), inputPattern)
+	}
+
+	// Display simple header
+	fmt.Printf("ARGUS TDOA PROCESSOR %s\n\n", version.GetFullVersion())
 
 	if verbose {
 		fmt.Printf("🔧 Configuration:\n")
@@ -113,20 +125,6 @@ func runProcessor(cmd *cobra.Command) error {
 			fmt.Printf("   Frequency Range: %s\n", strings.Join(frequencyRange, ", "))
 		}
 		fmt.Printf("   Dry Run: %t\n\n", dryRun)
-	}
-
-	// Find matching files
-	files, err := findMatchingFiles(inputPattern)
-	if err != nil {
-		return fmt.Errorf("failed to find input files: %w", err)
-	}
-
-	if len(files) == 0 {
-		return fmt.Errorf("no files found matching pattern '%s'. Make sure:\n  - Pattern includes correct path (e.g., 'data/argus-*.dat')\n  - Files exist and have .dat extension\n  - Pattern is quoted to prevent shell expansion", inputPattern)
-	}
-
-	if len(files) < 3 {
-		return fmt.Errorf("TDOA processing requires at least 3 input files, found %d:\n%s\nPattern: '%s'\nTip: Use quotes around patterns to prevent shell expansion: --input 'data/argus*.dat'", len(files), formatFileList(files), inputPattern)
 	}
 
 	fmt.Printf("📁 Found %d input files:\n", len(files))
@@ -265,19 +263,14 @@ func displaySummary(result *processor.Result, outputFile string) {
 	fmt.Printf("\n✅ TDOA Processing Complete!\n\n")
 
 	fmt.Printf("📊 Results Summary:\n")
-	fmt.Printf("┌─────────────────────────┬─────────────────────────────────────────┐\n")
-	fmt.Printf("│ Parameter               │ Value                                   │\n")
-	fmt.Printf("├─────────────────────────┼─────────────────────────────────────────┤\n")
-	fmt.Printf("│ Estimated Location      │ %.6f°, %.6f°              │\n", result.Location.Latitude, result.Location.Longitude)
-	fmt.Printf("│ Confidence              │ %.2f                                  │\n", result.Confidence)
-	fmt.Printf("│ Error Radius            │ %.1f meters                           │\n", result.ErrorRadius)
-	fmt.Printf("│ Processing Time         │ %s                   │\n", result.ProcessingTime.Format("2006-01-02 15:04:05"))
-	fmt.Printf("│ Files Processed         │ %d                                      │\n", len(result.ReceiverLocations))
-	fmt.Printf("│ Frequency               │ %.3f MHz                              │\n", result.Frequency/1e6)
-	fmt.Printf("│ Algorithm               │ %-39s │\n", result.Algorithm)
-	fmt.Printf("└─────────────────────────┴─────────────────────────────────────────┘\n\n")
-
-	fmt.Printf("📁 Output File: %s\n", outputFile)
+	fmt.Printf("Estimated Location: %.6f°, %.6f°\n", result.Location.Latitude, result.Location.Longitude)
+	fmt.Printf("Confidence: %.2f\n", result.Confidence)
+	fmt.Printf("Error Radius: %.1f meters\n", result.ErrorRadius)
+	fmt.Printf("Processing Time: %s\n", result.ProcessingTime.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Files Processed: %d\n", len(result.ReceiverLocations))
+	fmt.Printf("Frequency: %.3f MHz\n", result.Frequency/1e6)
+	fmt.Printf("Algorithm: %s\n", result.Algorithm)
+	fmt.Printf("\n📁 Output File: %s\n", outputFile)
 	fmt.Printf("🗺️  Open the output file in mapping software or web applications\n")
 	fmt.Printf("   for visualization of the transmitter location and confidence area.\n\n")
 }
