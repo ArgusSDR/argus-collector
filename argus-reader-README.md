@@ -299,12 +299,43 @@ Legend: * = data point, # = multiple points, Time →
 │ Signal-to-Noise Ratio   │         8.45 dB                        │
 │ Noise Floor             │       -12.1 dB                         │
 │ Dynamic Range           │        24.23 dB                        │
+│ Overall Signal Quality  │ Good (Suitable for TDoA processing)    │
 └─────────────────────────┴─────────────────────────────────────────┘
+```
 
-📈 Signal Quality Assessment:
-   SNR Quality: Good (8.45 dB > 6 dB threshold)
-   Suitable for TDoA processing: Yes
-   Recommended for correlation analysis: Yes
+### Signal Quality Assessment
+
+The `--stats` option now includes an overall signal quality rating based on multiple factors:
+
+**Quality Ratings:**
+
+| Rating | Description | TDoA Suitability |
+|--------|-------------|------------------|
+| **Great** | Excellent for TDoA processing | SNR ≥20 dB, strong signal power, good dynamic range |
+| **Good** | Suitable for TDoA processing | SNR ≥6 dB, adequate signal power, moderate dynamic range |
+| **Fair** | May work for TDoA processing | SNR ≥0 dB, acceptable signal characteristics |
+| **Poor** | Not recommended for TDoA | SNR <0 dB, weak signal, limited dynamic range |
+| **Bad** | Unusable for TDoA processing | Very poor SNR, inadequate signal quality |
+
+**Assessment Factors:**
+- **Signal-to-Noise Ratio** (primary factor) - Higher SNR indicates cleaner signal
+- **Signal Power Level** - Stronger signals provide better correlation results
+- **Dynamic Range** - Signal variation indicates active transmissions vs. noise
+- **Signal Presence** - Mean magnitude indicates overall signal strength
+
+**Example Quality Assessments:**
+```bash
+# Strong NOAA Weather Radio signal
+Overall Signal Quality: Good (Suitable for TDoA processing)
+
+# Amateur radio beacon
+Overall Signal Quality: Great (Excellent for TDoA processing)
+
+# Weak or noisy signal
+Overall Signal Quality: Poor (Not recommended for TDoA)
+
+# No signal present (noise only)
+Overall Signal Quality: Bad (Unusable for TDoA processing)
 ```
 
 ## Performance

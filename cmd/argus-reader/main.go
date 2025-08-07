@@ -797,6 +797,68 @@ func displayGraph(samples []complex64, sampleRate uint32) {
 	fmt.Println()
 }
 
+// assessSignalQuality provides a simple quality assessment based on signal metrics
+func assessSignalQuality(snrDb, signalPowerDb, meanMag, dynamicRange float64) string {
+	// Quality scoring based on multiple factors
+	var score int = 0
+	
+	// SNR-based scoring (most important factor)
+	if snrDb >= 20 {
+		score += 3  // Excellent SNR
+	} else if snrDb >= 12 {
+		score += 2  // Good SNR
+	} else if snrDb >= 6 {
+		score += 1  // Acceptable SNR
+	} else if snrDb >= 0 {
+		score += 0  // Poor SNR
+	} else {
+		score -= 1  // Very poor SNR
+	}
+	
+	// Signal power-based scoring
+	if signalPowerDb >= -20 {
+		score += 2  // Strong signal
+	} else if signalPowerDb >= -40 {
+		score += 1  // Moderate signal
+	} else if signalPowerDb >= -60 {
+		score += 0  // Weak signal
+	} else {
+		score -= 1  // Very weak signal
+	}
+	
+	// Dynamic range scoring (indicates signal variation)
+	if dynamicRange >= 0.5 {
+		score += 1  // Good dynamic range
+	} else if dynamicRange >= 0.2 {
+		score += 0  // Moderate dynamic range
+	} else {
+		score -= 1  // Poor dynamic range (too flat)
+	}
+	
+	// Mean magnitude scoring (signal presence indicator)
+	if meanMag >= 0.3 {
+		score += 1  // Strong signal presence
+	} else if meanMag >= 0.1 {
+		score += 0  // Moderate signal presence
+	} else {
+		score -= 1  // Weak signal presence
+	}
+	
+	// Convert score to quality rating
+	switch {
+	case score >= 6:
+		return "Great (Excellent for TDoA processing)"
+	case score >= 4:
+		return "Good (Suitable for TDoA processing)"  
+	case score >= 2:
+		return "Fair (May work for TDoA processing)"
+	case score >= 0:
+		return "Poor (Not recommended for TDoA)"
+	default:
+		return "Bad (Unusable for TDoA processing)"
+	}
+}
+
 // displayStatistics shows statistical analysis of the samples
 func displayStatistics(samples []complex64) {
 	if len(samples) == 0 {
@@ -899,7 +961,11 @@ func displayStatistics(samples []complex64) {
 	fmt.Printf("Signal Power (dB): %12.2f dB\n", signalPowerDb)
 	fmt.Printf("Signal Strength (dBm): %12.2f dBm\n", signalStrengthDbm)
 	fmt.Printf("Noise Floor (dB): %12.2f dB\n", noiseFloorDb)
-	fmt.Printf("Signal-to-Noise Ratio: %12.2f dB\n\n", snrDb)
+	fmt.Printf("Signal-to-Noise Ratio: %12.2f dB\n", snrDb)
+	
+	// Calculate and display overall signal quality
+	quality := assessSignalQuality(snrDb, signalPowerDb, meanMag, maxMag-minMag)
+	fmt.Printf("Overall Signal Quality: %s\n\n", quality)
 }
 
 // main is the entry point of the application
