@@ -16,16 +16,17 @@ import (
 )
 
 var (
-	inputPattern   string   // File pattern for input files (e.g., "argus-?_*.dat")
-	outputFormat   string   // Output format: geojson, kml, csv
-	outputDir      string   // Output directory
-	algorithm      string   // TDOA algorithm: basic, weighted, kalman
-	confidence     float64  // Minimum confidence threshold
-	maxDistance    float64  // Maximum expected transmitter distance (km)
-	frequencyRange []string // Frequency range to analyze
-	verbose        bool     // Enable verbose logging
-	showVersion    bool     // Show version information
-	dryRun         bool     // Show what would be processed without doing it
+	inputPattern    string   // File pattern for input files (e.g., "argus-?_*.dat")
+	outputFormat    string   // Output format: geojson, kml, csv
+	outputDir       string   // Output directory
+	algorithm       string   // TDOA algorithm: basic, weighted, kalman
+	confidence      float64  // Minimum confidence threshold
+	maxDistance     float64  // Maximum expected transmitter distance (km)
+	frequencyRange  []string // Frequency range to analyze
+	parallelWorkers int      // Number of parallel workers (0 = auto-detect)
+	verbose         bool     // Enable verbose logging
+	showVersion     bool     // Show version information
+	dryRun          bool     // Show what would be processed without doing it
 )
 
 // rootCmd represents the base command
@@ -76,6 +77,7 @@ func init() {
 	rootCmd.Flags().Float64VarP(&confidence, "confidence", "c", 0.5, "minimum confidence threshold (0.0-1.0)")
 	rootCmd.Flags().Float64VarP(&maxDistance, "max-distance", "d", 50.0, "maximum expected transmitter distance (km)")
 	rootCmd.Flags().StringSliceVar(&frequencyRange, "frequency-range", []string{}, "frequency range to analyze (e.g., '433.9-434.0')")
+	rootCmd.Flags().IntVar(&parallelWorkers, "parallel", 0, "number of parallel workers (0 = auto-detect based on CPU cores)")
 
 	// Control flags
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
@@ -141,11 +143,12 @@ func runProcessor(cmd *cobra.Command) error {
 
 	// Create processor configuration
 	config := &processor.Config{
-		Algorithm:      algorithm,
-		Confidence:     confidence,
-		MaxDistance:    maxDistance,
-		FrequencyRange: frequencyRange,
-		Verbose:        verbose,
+		Algorithm:       algorithm,
+		Confidence:      confidence,
+		MaxDistance:     maxDistance,
+		FrequencyRange:  frequencyRange,
+		Verbose:         verbose,
+		ParallelWorkers: parallelWorkers,
 	}
 
 	// Initialize processor
@@ -157,12 +160,26 @@ func runProcessor(cmd *cobra.Command) error {
 	// Process the files
 	fmt.Printf("⚙️  Processing %d files with %s algorithm...\n", len(files), algorithm)
 
-	// Estimate processing time based on file count
-	estimatedTime := len(files) * len(files) * 30 // Rough estimate: 30 seconds per pair
-	if estimatedTime > 60 {
-		fmt.Printf("⏱️  Estimated processing time: ~%d minutes (large files may take longer)\n", estimatedTime/60)
-	} else {
-		fmt.Printf("⏱️  Estimated processing time: ~%d seconds\n", estimatedTime)
+	// Estimate processing time based on file count and parallel workers
+	baseTimePerPair := 10 // Base time per pair in seconds (after optimizations)
+	totalPairs := len(files) * (len(files) - 1) / 2
+	workers := parallelWorkers
+	if workers <= 0 {
+		workers = len(files) // Use runtime.NumCPU() equivalent estimate
+		if workers > 8 {
+			workers = 8 // Cap estimate at 8 cores for reasonable time estimate
+		}
+	}
+	
+	estimatedTime := (totalPairs * baseTimePerPair) / workers
+	if totalPairs > 0 {
+		if estimatedTime > 60 {
+			fmt.Printf("⏱️  Estimated processing time: ~%d minutes (%d pairs, %d workers)\n", 
+				estimatedTime/60, totalPairs, workers)
+		} else {
+			fmt.Printf("⏱️  Estimated processing time: ~%d seconds (%d pairs, %d workers)\n", 
+				estimatedTime, totalPairs, workers)
+		}
 	}
 
 	result, err := proc.ProcessFiles(files)

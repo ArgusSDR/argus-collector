@@ -3,6 +3,8 @@
 # Data files - exclude collected signal data
 *.dat
 *.argus
+data/
+tdoa-results/
 
 # Build artifacts
 argus-collector

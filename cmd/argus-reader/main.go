@@ -27,6 +27,7 @@ var (
 	graphWidth         int
 	graphHeight        int
 	graphSamples       int
+	graphScale         string
 	showVersion        bool
 	showDeviceAnalysis bool
 )
@@ -50,7 +51,7 @@ Display modes:
   --samples    Show all decoded IQ sample values (magnitude, phase)
   --hex        Show complete raw hexadecimal dump of sample data bytes
   --stats      Show statistical analysis of sample data
-  --graph      Generate ASCII graph of signal magnitude over time`,
+  --graph      Generate ASCII graph of signal over time (use --graph-scale for units)`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		// Handle version flag
@@ -83,6 +84,7 @@ func init() {
 	rootCmd.Flags().IntVar(&graphWidth, "graph-width", 80, "width of the ASCII graph in characters")
 	rootCmd.Flags().IntVar(&graphHeight, "graph-height", 20, "height of the ASCII graph in lines")
 	rootCmd.Flags().IntVar(&graphSamples, "graph-samples", 1000, "number of samples to include in graph")
+	rootCmd.Flags().StringVar(&graphScale, "graph-scale", "magnitude", "graph scale: magnitude, db, or power")
 
 	// Add a device info analysis flag
 	rootCmd.Flags().BoolVar(&showDeviceAnalysis, "device-analysis", false, "show detailed device configuration analysis")
@@ -179,7 +181,7 @@ func displayFile(filename string, cmd *cobra.Command) error {
 						}
 					}
 				}
-				displayGraph(graphSampleData, metadata.SampleRate)
+				displayGraph(graphSampleData, metadata.SampleRate, graphScale)
 			}
 
 			if showStats {
@@ -671,39 +673,73 @@ func displayHexStreaming(filename string, metadata *filewriter.Metadata, totalSa
 }
 
 // displayGraph creates an ASCII graph of signal magnitude over time
-func displayGraph(samples []complex64, sampleRate uint32) {
+func displayGraph(samples []complex64, sampleRate uint32, scale string) {
 	if len(samples) == 0 {
 		fmt.Printf("📈 Signal Graph: No samples to display\n\n")
 		return
 	}
 
-	// Calculate magnitudes
-	magnitudes := make([]float64, len(samples))
-	minMag, maxMag := math.Inf(1), math.Inf(-1)
+	// Calculate values based on scale type
+	values := make([]float64, len(samples))
+	minVal, maxVal := math.Inf(1), math.Inf(-1)
+	scaleLabel := ""
+	unitLabel := ""
 
 	for i, sample := range samples {
-		mag := math.Sqrt(float64(real(sample)*real(sample) + imag(sample)*imag(sample)))
-		magnitudes[i] = mag
-		if mag < minMag {
-			minMag = mag
+		realPart := float64(real(sample))
+		imagPart := float64(imag(sample))
+		magnitude := math.Sqrt(realPart*realPart + imagPart*imagPart)
+		power := realPart*realPart + imagPart*imagPart
+		
+		var val float64
+		switch scale {
+		case "db", "dB":
+			// Convert magnitude to dB (20*log10 for amplitude)
+			if magnitude > 0 {
+				val = 20 * math.Log10(magnitude)
+			} else {
+				val = -120 // Very low dB value for zero magnitude
+			}
+			scaleLabel = "Signal Magnitude (dB)"
+			unitLabel = "dB"
+		case "power":
+			// Use power (I² + Q²)
+			val = power
+			scaleLabel = "Signal Power"
+			unitLabel = ""
+		default: // "magnitude"
+			// Use magnitude (default)
+			val = magnitude
+			scaleLabel = "Signal Magnitude"
+			unitLabel = ""
 		}
-		if mag > maxMag {
-			maxMag = mag
+		
+		values[i] = val
+		if val < minVal {
+			minVal = val
+		}
+		if val > maxVal {
+			maxVal = val
 		}
 	}
 
-	// Handle edge case where all magnitudes are the same
-	if maxMag == minMag {
-		maxMag = minMag + 1e-6
+	// Handle edge case where all values are the same
+	if maxVal == minVal {
+		maxVal = minVal + 1e-6
 	}
 
 	// Calculate time span
 	totalTime := float64(len(samples)) / float64(sampleRate)
 
-	fmt.Printf("📈 Signal Magnitude Over Time:\n")
+	fmt.Printf("📈 %s Over Time:\n", scaleLabel)
 	fmt.Printf("Samples: %d | Duration: %.3f seconds | Sample Rate: %.3f MSps\n",
 		len(samples), totalTime, float64(sampleRate)/1e6)
-	fmt.Printf("Magnitude Range: %.6f to %.6f\n", minMag, maxMag)
+	
+	if unitLabel != "" {
+		fmt.Printf("%s Range: %.2f to %.2f %s\n", scaleLabel, minVal, maxVal, unitLabel)
+	} else {
+		fmt.Printf("%s Range: %.6f to %.6f\n", scaleLabel, minVal, maxVal)
+	}
 	fmt.Println()
 
 	// Create graph grid
@@ -716,16 +752,16 @@ func displayGraph(samples []complex64, sampleRate uint32) {
 	}
 
 	// Plot data points
-	for i, mag := range magnitudes {
+	for i, val := range values {
 		// Map sample index to x position
-		x := int(float64(i) * float64(graphWidth-1) / float64(len(magnitudes)-1))
+		x := int(float64(i) * float64(graphWidth-1) / float64(len(values)-1))
 		if x >= graphWidth {
 			x = graphWidth - 1
 		}
 
-		// Map magnitude to y position (inverted because we draw top to bottom)
-		normalizedMag := (mag - minMag) / (maxMag - minMag)
-		y := int(float64(graphHeight-1) * (1.0 - normalizedMag))
+		// Map value to y position (inverted because we draw top to bottom)
+		normalizedVal := (val - minVal) / (maxVal - minVal)
+		y := int(float64(graphHeight-1) * (1.0 - normalizedVal))
 		if y >= graphHeight {
 			y = graphHeight - 1
 		}
@@ -742,14 +778,18 @@ func displayGraph(samples []complex64, sampleRate uint32) {
 	}
 
 	// Display the graph with y-axis labels
-	fmt.Printf("Magnitude\n")
+	fmt.Printf("%s\n", scaleLabel)
 	for i, row := range graph {
-		// Calculate the magnitude value for this row
+		// Calculate the value for this row
 		normalizedY := float64(graphHeight-1-i) / float64(graphHeight-1)
-		magValue := minMag + normalizedY*(maxMag-minMag)
+		yValue := minVal + normalizedY*(maxVal-minVal)
 
 		// Print y-axis label and graph row
-		fmt.Printf("%8.4f |", magValue)
+		if unitLabel != "" {
+			fmt.Printf("%8.2f |", yValue)
+		} else {
+			fmt.Printf("%8.4f |", yValue)
+		}
 		for _, char := range row {
 			fmt.Print(string(char))
 		}
@@ -785,15 +825,26 @@ func displayGraph(samples []complex64, sampleRate uint32) {
 
 	// Additional analysis
 	fmt.Printf("📊 Signal Analysis:\n")
-	avgMag := 0.0
-	for _, mag := range magnitudes {
-		avgMag += mag
+	avgVal := 0.0
+	for _, val := range values {
+		avgVal += val
 	}
-	avgMag /= float64(len(magnitudes))
+	avgVal /= float64(len(values))
 
-	fmt.Printf("   Average Magnitude: %.6f\n", avgMag)
-	fmt.Printf("   Peak Magnitude: %.6f\n", maxMag)
-	fmt.Printf("   Dynamic Range: %.2f dB\n", 20*math.Log10(maxMag/minMag))
+	switch scale {
+	case "db", "dB":
+		fmt.Printf("   Average Signal: %.2f dB\n", avgVal)
+		fmt.Printf("   Peak Signal: %.2f dB\n", maxVal)
+		fmt.Printf("   Dynamic Range: %.2f dB\n", maxVal-minVal)
+	case "power":
+		fmt.Printf("   Average Power: %.6f\n", avgVal)
+		fmt.Printf("   Peak Power: %.6f\n", maxVal)
+		fmt.Printf("   Dynamic Range: %.2f dB\n", 10*math.Log10(maxVal/minVal))
+	default: // magnitude
+		fmt.Printf("   Average Magnitude: %.6f\n", avgVal)
+		fmt.Printf("   Peak Magnitude: %.6f\n", maxVal)
+		fmt.Printf("   Dynamic Range: %.2f dB\n", 20*math.Log10(maxVal/minVal))
+	}
 	fmt.Println()
 }
 

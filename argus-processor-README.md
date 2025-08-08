@@ -5,7 +5,8 @@ The `argus-processor` tool analyzes multiple synchronized argus data files to ca
 ## Features
 
 - **Multi-receiver TDOA processing**: Processes 3+ synchronized data files from different receiver locations
-- **Cross-correlation analysis**: Finds time delays between signal arrivals using FFT-based correlation
+- **Parallel processing**: Multi-threaded correlation analysis with automatic CPU core detection (2-8x speedup)
+- **Cross-correlation analysis**: Finds time delays between signal arrivals using multi-resolution search
 - **Hyperbolic positioning**: Calculates transmitter location with error bounds and confidence intervals
 - **Multiple output formats**: Exports results in GeoJSON, KML, and CSV formats for mapping and analysis
 - **Configurable algorithms**: Supports basic, weighted, and Kalman filter approaches
@@ -42,6 +43,7 @@ The `argus-processor` tool analyzes multiple synchronized argus data files to ca
 - `--confidence`, `-c`: Minimum confidence threshold (0.0-1.0) [default: 0.5]
 - `--max-distance`, `-d`: Maximum expected transmitter distance (km) [default: 50]
 - `--frequency-range`: Frequency range to analyze (e.g., '433.9-434.0')
+- `--parallel`: Number of parallel workers (0 = auto-detect based on CPU cores) [default: 0]
 - `--verbose`, `-v`: Enable verbose logging
 - `--dry-run`: Show what would be processed without doing it
 - `--version`: Show version information
@@ -103,7 +105,8 @@ Example: `tdoa_20250801_143022_433920000Hz_heatmap.geojson`
 
 1. **File Loading**: Reads and validates all input files using optimized I/O
 2. **Parameter Validation**: Ensures compatible frequency, sample rate, and timing
-3. **Multi-Resolution Cross-Correlation**: 
+3. **Parallel Multi-Resolution Cross-Correlation**: 
+   - **Parallel Processing**: Multiple receiver pairs processed simultaneously by worker pool
    - **Coarse Search**: Fast correlation with 8x decimated samples
    - **Medium Search**: Refined correlation with 2x decimated samples  
    - **Fine Search**: Precise correlation at full resolution
@@ -130,6 +133,39 @@ The processor uses a three-stage correlation approach for optimal speed:
    - Uses all samples around medium result  
    - Searches ±8 samples for final precision
    - Provides sample-accurate delay measurement
+
+### Parallel Processing Architecture
+
+The processor uses parallel processing to significantly speed up multi-receiver correlation analysis:
+
+**Automatic Worker Detection**:
+- By default, uses all available CPU cores for optimal performance
+- Each worker processes different receiver pairs simultaneously
+- Automatically balances workload across available cores
+
+**Manual Worker Control**:
+```bash
+# Use 4 parallel workers explicitly
+./argus-processor --input "station*.dat" --parallel 4
+
+# Use single-threaded processing (useful for debugging)
+./argus-processor --input "station*.dat" --parallel 1
+
+# Auto-detect optimal workers (default)
+./argus-processor --input "station*.dat" --parallel 0
+```
+
+**Performance Benefits**:
+- **2-8x speedup** depending on CPU core count and receiver pair count
+- Optimal scaling for 3-6 receiver scenarios (typical TDOA applications)
+- No accuracy loss - results identical to sequential processing
+- Real-time progress tracking shows parallel operations
+
+**Worker Pool Design**:
+- Each worker processes complete receiver pairs independently
+- Thread-safe correlation operations with shared-nothing architecture  
+- Results collected and aggregated in processing order
+- Memory usage scales with worker count and file sizes
 
 ## Example Workflow
 

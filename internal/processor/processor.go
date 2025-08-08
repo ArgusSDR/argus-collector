@@ -7,7 +7,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -22,6 +24,25 @@ type Config struct {
 	MaxDistance    float64  // Maximum expected transmitter distance (km)
 	FrequencyRange []string // Frequency ranges to analyze
 	Verbose        bool     // Enable verbose logging
+	ParallelWorkers int     // Number of parallel workers (0 = auto-detect based on CPU cores)
+}
+
+// ReceiverPair represents a pair of receivers for parallel processing
+type ReceiverPair struct {
+	Index1   int          // Index of first receiver
+	Index2   int          // Index of second receiver  
+	R1       ReceiverInfo // First receiver
+	R2       ReceiverInfo // Second receiver
+	PairNum  int          // Pair number (for progress tracking)
+	Total    int          // Total number of pairs
+}
+
+// CorrelationResult holds the result of a correlation operation
+type CorrelationResult struct {
+	Measurement *TDOAMeasurement
+	Error       error
+	PairNum     int
+	PairID      string // For logging (e.g., "R1↔R2")
 }
 
 // ProgressTracker tracks progress of long-running operations
@@ -421,11 +442,8 @@ func (p *Processor) performTDOAAnalysisWithProgress(receivers []ReceiverInfo, pr
 	return p.performTDOAAnalysis(receivers, progress)
 }
 
-// performTDOAAnalysis performs cross-correlation analysis between all receiver pairs
+// performTDOAAnalysis performs cross-correlation analysis between all receiver pairs using parallel processing
 func (p *Processor) performTDOAAnalysis(receivers []ReceiverInfo, progress ...*ProgressTracker) ([]TDOAMeasurement, error) {
-	var measurements []TDOAMeasurement
-	var allMeasurements []TDOAMeasurement // Keep all measurements for output
-
 	// Get optional progress tracker
 	var pt *ProgressTracker
 	if len(progress) > 0 {
@@ -434,48 +452,100 @@ func (p *Processor) performTDOAAnalysis(receivers []ReceiverInfo, progress ...*P
 
 	// Calculate total number of pairs
 	totalPairs := len(receivers) * (len(receivers) - 1) / 2
-	pairCount := 0
+	
+	if totalPairs == 0 {
+		return nil, fmt.Errorf("insufficient receivers for TDOA analysis")
+	}
 
-	// Process all unique pairs of receivers
+	// Determine number of workers
+	numWorkers := p.config.ParallelWorkers
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
+	
+	// Cap workers at total pairs for small datasets
+	if numWorkers > totalPairs {
+		numWorkers = totalPairs
+	}
+
+	if pt == nil && p.config.Verbose {
+		fmt.Printf("   🧵 Using %d parallel workers for %d receiver pairs\n", numWorkers, totalPairs)
+	}
+
+	// Create channels for work distribution
+	workChan := make(chan ReceiverPair, totalPairs)
+	resultsChan := make(chan CorrelationResult, totalPairs)
+
+	// Create worker pool
+	var wg sync.WaitGroup
+	
+	// Launch workers
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go p.correlationWorker(workChan, resultsChan, &wg)
+	}
+
+	// Generate all receiver pairs and send to work channel
+	pairCount := 0
 	for i := 0; i < len(receivers); i++ {
 		for j := i + 1; j < len(receivers); j++ {
 			pairCount++
-
-			// Update progress
-			if pt != nil {
-				pairProgress := float64(pairCount-1) / float64(totalPairs)
-				pt.UpdateSubProgress(pairProgress, fmt.Sprintf("pair %d/%d (%s↔%s)", pairCount, totalPairs, receivers[i].ID, receivers[j].ID))
-			} else {
-				fmt.Printf("   🔗 Correlating %s ↔ %s (%d/%d)...\n",
-					receivers[i].ID, receivers[j].ID, pairCount, totalPairs)
+			pair := ReceiverPair{
+				Index1:  i,
+				Index2:  j,
+				R1:      receivers[i],
+				R2:      receivers[j],
+				PairNum: pairCount,
+				Total:   totalPairs,
 			}
+			workChan <- pair
+		}
+	}
+	close(workChan) // No more work
 
-			measurement, err := p.crossCorrelate(receivers[i], receivers[j])
-			if err != nil {
-				if p.config.Verbose {
-					if pt == nil {
-						fmt.Printf("⚠️  Cross-correlation failed for %s-%s: %v\n",
-							receivers[i].ID, receivers[j].ID, err)
-					}
-				}
-				continue
+	// Start a goroutine to close results channel when all workers finish
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Collect results and track progress
+	var measurements []TDOAMeasurement
+	var allMeasurements []TDOAMeasurement
+	completedCount := 0
+	
+	for result := range resultsChan {
+		completedCount++
+		
+		// Update progress
+		if pt != nil {
+			pairProgress := float64(completedCount) / float64(totalPairs)
+			pt.UpdateSubProgress(pairProgress, fmt.Sprintf("completed %d/%d pairs", completedCount, totalPairs))
+		}
+
+		// Handle result
+		if result.Error != nil {
+			if p.config.Verbose && pt == nil {
+				fmt.Printf("⚠️  Cross-correlation failed for %s: %v\n", result.PairID, result.Error)
 			}
+			continue
+		}
 
-			// Always keep all measurements for output files
-			allMeasurements = append(allMeasurements, *measurement)
+		// Always keep all measurements for output files
+		allMeasurements = append(allMeasurements, *result.Measurement)
 
-			// Filter measurements by confidence threshold for location calculation
-			if measurement.Confidence >= p.config.Confidence {
-				measurements = append(measurements, *measurement)
-				if pt == nil {
-					fmt.Printf("      ✅ Δt=%.1fns, Δd=%.1fm, confidence=%.3f\n",
-						measurement.TimeDiff, measurement.DistanceDiff, measurement.Confidence)
-				}
-			} else {
-				if pt == nil {
-					fmt.Printf("      ⚠️  Low confidence: %.3f (threshold: %.3f) - included in output\n",
-						measurement.Confidence, p.config.Confidence)
-				}
+		// Filter measurements by confidence threshold for location calculation
+		if result.Measurement.Confidence >= p.config.Confidence {
+			measurements = append(measurements, *result.Measurement)
+			if pt == nil && p.config.Verbose {
+				fmt.Printf("      ✅ %s: Δt=%.1fns, Δd=%.1fm, confidence=%.3f\n",
+					result.PairID, result.Measurement.TimeDiff, 
+					result.Measurement.DistanceDiff, result.Measurement.Confidence)
+			}
+		} else {
+			if pt == nil && p.config.Verbose {
+				fmt.Printf("      ⚠️  %s: Low confidence: %.3f (threshold: %.3f) - included in output\n",
+					result.PairID, result.Measurement.Confidence, p.config.Confidence)
 			}
 		}
 	}
@@ -497,6 +567,29 @@ func (p *Processor) performTDOAAnalysis(receivers []ReceiverInfo, progress ...*P
 	}
 
 	return measurements, nil
+}
+
+// correlationWorker is a worker goroutine that processes receiver pairs from the work channel
+func (p *Processor) correlationWorker(workChan <-chan ReceiverPair, resultsChan chan<- CorrelationResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+	
+	for pair := range workChan {
+		// Create pair ID for logging
+		pairID := fmt.Sprintf("%s↔%s", pair.R1.ID, pair.R2.ID)
+		
+		// Perform correlation
+		measurement, err := p.crossCorrelate(pair.R1, pair.R2)
+		
+		// Send result
+		result := CorrelationResult{
+			Measurement: measurement,
+			Error:       err,
+			PairNum:     pair.PairNum,
+			PairID:      pairID,
+		}
+		
+		resultsChan <- result
+	}
 }
 
 // crossCorrelate performs cross-correlation between two receiver signals using multi-resolution search
